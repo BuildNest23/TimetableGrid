@@ -659,7 +659,7 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const scenariosRaw = localStorage.getItem(SCENARIOS_KEY);
     const scenarios = scenariosRaw ? JSON.parse(scenariosRaw) : {};
     return JSON.stringify({
-      app: "ClassGrid",
+      app: "TimetableGrid",
       version: 4,
       exportedAt: new Date().toISOString(),
       data,

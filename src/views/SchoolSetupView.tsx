@@ -599,7 +599,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
     const json = exportBackupJson();
     const blob = new Blob([json], { type: "application/json" });
     const stamp = new Date().toISOString().slice(0, 10);
-    const fileName = `ClassGrid-backup-${stamp}.json`;
+    const fileName = `TimetableGrid-backup-${stamp}.json`;
     return { blob, fileName };
   };
 
@@ -627,15 +627,15 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: `ClassGrid backup — ${data.schoolName || "school"}`,
+          title: `TimetableGrid backup — ${data.schoolName || "school"}`,
           text: `Backup of "${data.schoolName || "school"}" timetable, exported ${new Date().toLocaleDateString()}.`
         });
         return;
       }
 
       if (navigator.share) {
-        const summary = `ClassGrid backup for ${data.schoolName || "school"} on ${new Date().toLocaleDateString()}. (Full backup file not shareable in this browser — use Download instead.)`;
-        await navigator.share({ title: "ClassGrid Backup", text: summary });
+        const summary = `TimetableGrid backup for ${data.schoolName || "school"} on ${new Date().toLocaleDateString()}. (Full backup file not shareable in this browser — use Download instead.)`;
+        await navigator.share({ title: "TimetableGrid Backup", text: summary });
         return;
       }
 
@@ -1445,7 +1445,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
               Device Storage
             </h2>
             <p className="text-xs text-stone-500 font-medium">
-              How much of the browser's ~5 MB limit is used by ClassGrid
+              How much of the browser's ~5 MB limit is used by TimetableGrid
             </p>
           </div>
         </div>
@@ -1584,7 +1584,7 @@ To restore, save the file from WhatsApp/Drive to your phone, then tap <b>Restore
               Danger Zone — Reset All Timetables
             </h3>
             <p className="text-xs text-rose-700 dark:text-rose-300 mt-1 leading-relaxed">
-              This will permanently delete all classes, teachers, periods, and schedules, resetting ClassGrid to its default state. Please export a backup first if you need this data.
+              This will permanently delete all classes, teachers, periods, and schedules, resetting TimetableGrid to its default state. Please export a backup first if you need this data.
             </p>
             <button
               type="button"

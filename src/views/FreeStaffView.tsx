@@ -122,7 +122,7 @@ export const FreeStaffView: React.FC = () => {
       getLeavesForDate
     });
     const stamp = new Date().toISOString().slice(0, 10);
-    const fileName = `ClassGrid-FreeStaff-${stamp}.png`;
+    const fileName = `TimetableGrid-FreeStaff-${stamp}.png`;
     await shareOrDownloadCanvas(canvas, fileName, "Free Staff by Period");
   };
 

@@ -57,7 +57,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider mb-1">
-              <Sparkles className="w-3.5 h-3.5" /> ClassGrid Timetable Engine
+              <Sparkles className="w-3.5 h-3.5" /> TimetableGrid Engine
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-stone-900 dark:text-stone-100 tracking-tight">
               {data.schoolName || "My School"}

@@ -346,7 +346,7 @@ export const SubstituteView: React.FC = () => {
 
       const stamp = dateKey();
       const safeName = (absentTeacher || "absent").replace(/\s+/g, "-");
-      const fileName = `ClassGrid-Substitute-${safeName}-${stamp}.png`;
+      const fileName = `TimetableGrid-Substitute-${safeName}-${stamp}.png`;
       const title = `Substitute Board — ${absentTeacher}`;
 
       await shareOrDownloadCanvas(canvas, fileName, title);

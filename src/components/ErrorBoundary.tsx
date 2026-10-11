@@ -35,7 +35,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       const raw = localStorage.getItem('universalTimetable');
       const scenarios = localStorage.getItem('utScenarios') || '{}';
       const payload = {
-        app: "ClassGrid",
+        app: "TimetableGrid",
         version: 4,
         exportedAt: new Date().toISOString(),
         emergencyBackup: true,
@@ -44,7 +44,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const fileName = `classgrid-emergency-backup-${stamp}.json`;
+      const fileName = `timetablegrid-emergency-backup-${stamp}.json`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -63,7 +63,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     const err = this.state.error;
     const info = this.state.errorInfo;
     const text = [
-      "ClassGrid Error Report",
+      "TimetableGrid Error Report",
       "=====================",
       "Time: " + new Date().toISOString(),
       "Message: " + (err?.message || "unknown"),
@@ -103,7 +103,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
           </h2>
 
           <p className="text-xs text-stone-600 dark:text-stone-400 text-center leading-relaxed mb-4">
-            ClassGrid hit an unexpected error. Your saved data is still on this device —
+            TimetableGrid hit an unexpected error. Your saved data is still on this device —
             download an emergency backup before reloading if you want to be extra safe.
           </p>
 

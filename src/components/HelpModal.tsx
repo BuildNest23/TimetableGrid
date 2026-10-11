@@ -23,7 +23,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h2 className="text-base font-bold text-stone-900 dark:text-stone-100">
-                ClassGrid Guide
+                TimetableGrid Guide
               </h2>
               <p className="text-xs text-stone-500">Universal School Timetable Manual</p>
             </div>

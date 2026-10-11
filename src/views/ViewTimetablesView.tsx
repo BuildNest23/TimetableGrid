@@ -68,7 +68,7 @@ export const ViewTimetablesView: React.FC = () => {
 
       const stamp = new Date().toISOString().slice(0, 10);
       const title = `${data.schoolName} — ${activeSection.toUpperCase()}`;
-      const fileName = `ClassGrid-${activeSection}-${stamp}.png`;
+      const fileName = `TimetableGrid-${activeSection}-${stamp}.png`;
 
       await shareOrDownloadCanvas(canvas, fileName, title);
     } catch (err) {

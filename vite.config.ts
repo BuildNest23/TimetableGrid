@@ -15,8 +15,8 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: './',
-          name: 'ClassGrid — Universal School Timetable',
-          short_name: 'ClassGrid',
+          name: 'TimetableGrid — Universal School Timetable',
+          short_name: 'TG',
           description: 'A native Android-feeling timetable app with fast scheduling, conflict detection, smart substitution, and multi-format exports.',
           theme_color: '#1B4D3E',
           background_color: '#F8F9FA',

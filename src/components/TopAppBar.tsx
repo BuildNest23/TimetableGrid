@@ -36,11 +36,11 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-emerald-800 dark:bg-emerald-700 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-xs">
-            CG
+            TG
           </div>
           <div className="min-w-0">
             <h1 className="text-base sm:text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100 truncate flex items-center gap-2">
-              ClassGrid
+              TimetableGrid
               <span className="hidden md:inline-block text-xs font-medium text-stone-400">·</span>
               <span className="hidden md:inline-block text-xs font-semibold text-emerald-800 dark:text-emerald-400">
                 {activeViewTitle}
@@ -90,7 +90,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
               type="button"
               onClick={handleInstallClick}
               className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition"
-              title="Install ClassGrid as an app"
+              title="Install TimetableGrid as an app"
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Install</span>
@@ -134,7 +134,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
                   <Download className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
-                  Install ClassGrid
+                  Install TimetableGrid
                 </h3>
               </div>
               <button
@@ -163,7 +163,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
                   </li>
                   <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
                   <li>Tap <b>Add</b> in the top-right corner.</li>
-                  <li>ClassGrid will appear on your home screen and open full-screen, without browser bars.</li>
+                  <li>TimetableGrid will appear on your home screen and open full-screen, without browser bars.</li>
                 </ol>
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-[11px] text-amber-900 dark:text-amber-200 leading-relaxed">
                   <b>Tip:</b> If you opened this page in Chrome or another browser on iOS, first copy the URL and paste it into Safari.
@@ -175,7 +175,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
               <>
                 <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed mb-4">
                   Your current browser doesn&apos;t show an automatic install option.
-                  ClassGrid works best installed from one of these:
+                  TimetableGrid works best installed from one of these:
                 </p>
                 <ul className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed space-y-2 mb-4 list-disc pl-5">
                   <li>
@@ -189,7 +189,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
                   </li>
                 </ul>
                 <div className="p-3 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-900/60 rounded-xl text-[11px] text-sky-900 dark:text-sky-200 leading-relaxed">
-                  Once installed, ClassGrid runs offline and gets its own home-screen icon.
+                  Once installed, TimetableGrid runs offline and gets its own home-screen icon.
                 </div>
               </>
             )}

@@ -65,7 +65,7 @@ export const TeachersRosterView: React.FC = () => {
       getLeavesForDate
     });
     const stamp = new Date().toISOString().slice(0, 10);
-    const fileName = `ClassGrid-Roster-${stamp}.png`;
+    const fileName = `TimetableGrid-Roster-${stamp}.png`;
     await shareOrDownloadCanvas(canvas, fileName, "Teachers Roster");
   };
 
