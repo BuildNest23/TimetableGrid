@@ -2,7 +2,7 @@
 
 <img src="./public/pwa-192x192.png" alt="ClassGrid Logo" width="120" height="120" />
 
-# ClassGrid
+# TimetableGrid
 
 **Universal School Timetable — build, edit, view, and print school timetables offline.**
 
