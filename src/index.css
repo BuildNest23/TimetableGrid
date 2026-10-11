@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --primary: #1B4D3E;
+    --primary-container: #D5E5D7;
+    --on-primary: #FFFFFF;
+    --surface: #F8F9FA;
+    --surface-container: #FFFFFF;
+    --surface-variant: #EFEBE2;
+    --outline: #DAD3C3;
+  }
+
+  .dark {
+    --primary: #4E9670;
+    --primary-container: #1D3123;
+    --on-primary: #0E1B14;
+    --surface: #121212;
+    --surface-container: #1E1E1E;
+    --surface-variant: #2A261F;
+    --outline: #3A3527;
+  }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    overscroll-behavior-y: contain;
+  }
+
+  input, textarea, select {
+    user-select: auto;
+  }
+}
+
+/* Safe area padding for Android gesture navigation and notches */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Clean scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 113, 108, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 113, 108, 0.45);
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Print Rules */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  /* Hide every sibling of #printArea inside the app wrapper */
+  #root > div > :not(#printArea) {
+    display: none !important;
+  }
+  #root > div {
+    min-height: 0 !important;
+    display: block !important;
+  }
+  #printArea {
+    display: block !important;
+    width: 100% !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .print-sheet {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .print-sheet.fixed-sheet {
+    width: 100%;
+    height: var(--page-h, 194mm);
+    max-height: var(--page-h, 194mm);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    page-break-inside: avoid;
+  }
+  .print-sheet.fixed-sheet:last-child {
+    page-break-after: auto;
+  }
+  .print-sheet.flow-sheet {
+    display: block;
+    page-break-after: always;
+  }
+  .flow-sheet thead {
+    display: table-header-group;
+  }
+  .flow-sheet tbody tr {
+    page-break-inside: avoid;
+  }
+
+  .sheet-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .sheet-body > table.fill {
+    width: 100%;
+    height: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    flex: 1;
+  }
+  .sheet-body > table.fill > tbody {
+    height: 100%;
+  }
+  .sheet-body > table.fill > tbody > tr {
+    height: 1px;
+  }
+
+  .print-sheet th,
+  .print-sheet td {
+    border: 1px solid #000 !important;
+    padding: calc(2mm * var(--mult, 1)) calc(1.5mm * var(--mult, 1)) !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    line-height: 1.15 !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .print-sheet th {
+    background: #e5e7eb !important;
+    font-size: calc(9pt * var(--mult, 1)) !important;
+  }
+  .print-sheet td {
+    font-size: calc(9pt * var(--mult, 1)) !important;
+  }
+
+  .wide-sheet table.fill,
+  .wide-sheet th,
+  .wide-sheet td {
+    font-size: calc(9pt * var(--mult, 1)) !important;
+  }
+  .class-sheet table.fill,
+  .class-sheet th,
+  .class-sheet td {
+    font-size: calc(13pt * var(--mult, 1)) !important;
+  }
+  .teacher-sheet table.fill,
+  .teacher-sheet td {
+    font-size: calc(14pt * var(--mult, 1)) !important;
+  }
+
+  .print-sheet .print-title,
+  .print-title {
+    font-size: calc(18pt * var(--mult, 1)) !important;
+    text-align: center !important;
+    margin: 0 0 2mm 0 !important;
+    font-weight: 700 !important;
+    color: #000 !important;
+  }
+  .print-sheet .print-sub,
+  .print-sub {
+    font-size: calc(11pt * var(--mult, 1)) !important;
+    text-align: center !important;
+    margin: 0 0 3mm 0 !important;
+    color: #000 !important;
+  }
+
+  .print-sheet .break-cell,
+  .print-sheet .break-header {
+    background: #e5e7eb !important;
+  }
+  .print-sheet .break-text {
+    writing-mode: vertical-rl !important;
+    text-orientation: upright !important;
+    letter-spacing: .35em !important;
+    font-weight: 700 !important;
+  }
+  .print-sheet .sectionrow td,
+  .print-sheet .sectionrow b {
+    background: #d1d5db !important;
+    color: #000 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .06em !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

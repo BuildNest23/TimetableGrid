@@ -1,0 +1,6 @@
+{
+  "name": "ClassGrid",
+  "description": "A native Android-feeling timetable app with fast scheduling, conflict detection, smart substitution, and multi-format exports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
