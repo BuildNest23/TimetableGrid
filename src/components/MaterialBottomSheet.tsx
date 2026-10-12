@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, X, Check } from 'lucide-react';
 
 interface MaterialBottomSheetProps {
@@ -21,12 +21,12 @@ export const MaterialBottomSheet: React.FC<MaterialBottomSheetProps> = ({
   placeholder = "Search..."
 }) => {
   const [search, setSearch] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Search box is intentionally NOT auto-focused: the keyboard stays closed
+  // until the user taps the search field.
 
   useEffect(() => {
     if (isOpen) {
       setSearch("");
-      setTimeout(() => inputRef.current?.focus(), 150);
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -73,7 +73,6 @@ export const MaterialBottomSheet: React.FC<MaterialBottomSheetProps> = ({
           <div className="relative flex items-center">
             <Search className="w-4 h-4 absolute left-3.5 text-stone-400 pointer-events-none" />
             <input
-              ref={inputRef}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
