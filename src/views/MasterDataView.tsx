@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { useTimetable } from '../context/TimetableContext';
 import { QUAL_LIST, RANK_LIST, DESIG_LIST } from '../types/timetable';
 import { MaterialBottomSheet } from '../components/MaterialBottomSheet';
@@ -24,7 +25,7 @@ export const MasterDataView: React.FC = () => {
     cascadeClassRename
   } = useTimetable();
 
-  const [activeTab, setActiveTab] = useState<'teacher' | 'subject' | 'class'>('teacher');
+  const [activeTab, setActiveTab] = usePersistentState<'teacher' | 'subject' | 'class'>('utMasterTab', 'teacher');
   const [editingIdx, setEditingIdx] = useState<number>(-1);
 
   // Form states

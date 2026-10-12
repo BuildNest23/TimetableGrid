@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { useTimetable } from '../context/TimetableContext';
 import { exportTimetableToExcel } from '../utils/excelExport';
 import { triggerPrint } from '../utils/printUtils';
@@ -24,9 +25,15 @@ export const PrintingView: React.FC = () => {
 
   const [printSize, setPrintSize] = useState<'xs'|'s'|'m'|'l'|'xl'>(data.printSize || 'm');
   const [orientation, setOrientation] = useState<'landscape'|'portrait'>(data.printOrientation || 'landscape');
-  const [selectedTeacher, setSelectedTeacher] = useState<string>(data.teachers[0] || '');
-  const [selectedClass, setSelectedClass] = useState<string>(data.classes[0]?.[0] || '');
-  const [teacherGridLayout, setTeacherGridLayout] = useState<string>('4x2');
+  const [selectedTeacher, setSelectedTeacher] = usePersistentState<string>('utPrintTeacher', data.teachers[0] || '');
+  const [selectedClass, setSelectedClass] = usePersistentState<string>('utPrintClass', data.classes[0]?.[0] || '');
+  const [teacherGridLayout, setTeacherGridLayout] = usePersistentState<string>('utPrintGrid', '4x2');
+  // Drop saved selections that no longer exist (renamed/deleted)
+  React.useEffect(() => {
+    if (selectedTeacher && !data.teachers.includes(selectedTeacher)) setSelectedTeacher(data.teachers[0] || '');
+    if (selectedClass && !data.classes.some(c => c[0] === selectedClass)) setSelectedClass(data.classes[0]?.[0] || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.teachers, data.classes]);
   const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
   const [wholeTitle, setWholeTitle] = useState<string>(data.wholeTitle || 'Whole School Timetable');
   const [allTeachersTitle, setAllTeachersTitle] = useState<string>(data.allTeachersTitle || 'All Teachers Timetable');

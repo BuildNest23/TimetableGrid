@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { useTimetable } from '../context/TimetableContext';
 import { Slot2, ClassItem, DAY_NAMES } from '../types/timetable';
 import { MaterialBottomSheet } from '../components/MaterialBottomSheet';
@@ -31,9 +32,9 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
     removeConflictException
   } = useTimetable();
 
-  const [editorMode, setEditorMode] = useState<'fast' | 'grid'>('fast');
-  const [selectedClassIdx, setSelectedClassIdx] = useState<number>(0);
-  const [selectedPeriodIdx, setSelectedPeriodIdx] = useState<number>(0);
+  const [editorMode, setEditorMode] = usePersistentState<'fast' | 'grid'>('utEditorMode', 'fast');
+  const [selectedClassIdx, setSelectedClassIdx] = usePersistentState<number>('utEditorClassIdx', 0);
+  const [selectedPeriodIdx, setSelectedPeriodIdx] = usePersistentState<number>('utEditorPeriodIdx', 0);
 
   const [subjectDraft, setSubjectDraft] = useState<string>("");
   const [teacherDraft, setTeacherDraft] = useState<string>("");
@@ -62,6 +63,13 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
     isOpen: false,
     options: { message: "" }
   });
+
+  // Guard against stale saved indexes (e.g. classes/periods were removed)
+  useEffect(() => {
+    if (selectedClassIdx >= data.classes.length) setSelectedClassIdx(0);
+    if (selectedPeriodIdx >= data.periods.length) setSelectedPeriodIdx(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.classes.length, data.periods.length]);
 
   const conflicts = useMemo(() => computeConflicts(), [computeConflicts]);
   const currentClass = data.classes[selectedClassIdx] || data.classes[0];

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { useTimetable } from '../context/TimetableContext';
 import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExport';
 import { DAY_NAMES } from '../types/timetable';
@@ -46,14 +47,14 @@ export const ViewTimetablesView: React.FC = () => {
     getLeavesForDate
   } = useTimetable();
 
-  const [activeSection, setActiveSection] = useState<'whole' | 'allteachers' | 'timings' | 'class' | 'teacher'>('whole');
-  const [selectedClass, setSelectedClass] = useState<string>(data.classes[0]?.[0] || "");
-  const [selectedTeacher, setSelectedTeacher] = useState<string>(data.teachers[0] || "");
+  const [activeSection, setActiveSection] = usePersistentState<'whole' | 'allteachers' | 'timings' | 'class' | 'teacher'>('utViewSection', 'whole');
+  const [selectedClass, setSelectedClass] = usePersistentState<string>('utViewClass', data.classes[0]?.[0] || "");
+  const [selectedTeacher, setSelectedTeacher] = usePersistentState<string>('utViewTeacher', data.teachers[0] || "");
   const [fullscreenMode, setFullscreenMode] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   const currentClass = data.classes.find(c => c[0] === selectedClass) || data.classes[0];
-  const currentTeacher = selectedTeacher || data.teachers[0];
+  const currentTeacher = data.teachers.includes(selectedTeacher) ? selectedTeacher : data.teachers[0];
 
   const handleExportImage = async (share = false) => {
     setIsExporting(true);
