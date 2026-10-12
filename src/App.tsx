@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TimetableProvider, useTimetable } from './context/TimetableContext';
 import { ActiveTab } from './types/timetable';
+import { useScrollRestore } from './hooks/usePersistentState';
 import { TopAppBar } from './components/TopAppBar';
 import { BottomNavBar } from './components/BottomNavBar';
 import { HelpModal } from './components/HelpModal';
@@ -30,8 +31,14 @@ const TAB_TITLES: Record<ActiveTab, string> = {
 
 const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    return (localStorage.getItem('utCurrentTab') as ActiveTab) || 'dashboard';
+    try {
+      const saved = localStorage.getItem('utCurrentTab') as ActiveTab | null;
+      if (saved && saved in TAB_TITLES) return saved;
+    } catch { /* ignore */ }
+    return 'dashboard';
   });
+  // Stay at the same scroll position per tab after a refresh
+  useScrollRestore(`utScroll_${activeTab}`);
 
   const [editorJump, setEditorJump] = useState<{ period?: number; teacher?: string } | undefined>(undefined);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
@@ -39,7 +46,7 @@ const AppContent: React.FC = () => {
 
   const handleSelectTab = (tab: ActiveTab, jumpContext?: { period?: number; teacher?: string }) => {
     setActiveTab(tab);
-    localStorage.setItem('utCurrentTab', tab);
+    try { localStorage.setItem('utCurrentTab', tab); } catch { /* ignore */ }
     if (jumpContext) {
       setEditorJump(jumpContext);
     }
@@ -51,7 +58,8 @@ const AppContent: React.FC = () => {
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
-      }      if (e.key === 'Escape') {
+      }
+      if (e.key === 'Escape') {
                const fs = document.getElementById('fullscreenModal');
                if (fs && fs.classList.contains('show')) { fs.classList.remove('show'); return; }
                const more = document.getElementById('moreSheet');
