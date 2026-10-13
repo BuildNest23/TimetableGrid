@@ -23,6 +23,8 @@ export interface TimingsData {
   normalBreak: BreakInfo;
   fridayBreak: BreakInfo;
   assemblyTime: string;
+  /** Normal-day assembly time (e.g. "07:45 AM - 08:00 AM"), or "" if not set */
+  normalAssemblyTime: string;
   fridayEnabled: boolean;
   fridayDayName: string;
   fridayDayShort: string;
@@ -74,6 +76,10 @@ export function getPeriodTimes(data: TimetableData): TimingsData {
     ? `${ft.assemblyTime.start || '—'} - ${ft.assemblyTime.end || '—'}`
     : '';
 
+  // Normal assembly time
+  const na = data.assemblyTime;
+  const normalAssemblyTime = (na && (na.start || na.end)) ? `${na.start || '—'} - ${na.end || '—'}` : '';
+
   // Periods
   const periods: PeriodTimeInfo[] = data.periods.map((p, pi) => {
     const pt = data.periodTimes?.[pi];
@@ -117,6 +123,7 @@ export function getPeriodTimes(data: TimetableData): TimingsData {
     normalBreak,
     fridayBreak,
     assemblyTime,
+    normalAssemblyTime,
     fridayEnabled,
     fridayDayName: dayName,
     fridayDayShort: dayShort,
