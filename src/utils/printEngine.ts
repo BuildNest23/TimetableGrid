@@ -1,6 +1,9 @@
 import { TimetableData, ClassItem, DAY_NAMES } from '../types/timetable';
 import { esc, wholeSchoolCellLines, cellTextForDay } from './printHtml';
 
+// Escapes text and allows a line break after every "/" so long names like Computer/Drawing wrap inside the cell.
+const escWrap = (s: unknown): string => esc(s).replace(/\//g, '/<wbr>');
+
 export interface PageLayoutOptions {
   type: 'whole' | 'allteachers' | 'class' | 'teacher' | 'roster';
   selectedClass?: string;
@@ -161,7 +164,7 @@ export function measureLayoutElements(
 
     host.innerHTML = `
       <div id="measure_title_block" style="box-sizing:border-box;">${titleBlockHtml}</div>
-      <table style="width:100%; border-collapse:collapse; table-layout:fixed; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+      <table style="width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
         <thead id="measure_thead">${tableHeaderTr}</thead>
         <tbody id="measure_tbody">
           ${rowDefs.map(r => r.render(0)).join('')}
@@ -336,9 +339,9 @@ function buildSectionGroups(
           cellsLines.forEach((lines, idx) => {
             let inner = '';
             if (lines.length === 1) {
-              inner = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${esc(lines[0])}</div>`;
+              inner = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${escWrap(lines[0])}</div>`;
             } else {
-              inner = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;"><div>${esc(lines[0])}</div><div>${esc(lines[1])}</div></div>`;
+              inner = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;"><div>${escWrap(lines[0])}</div><div>${escWrap(lines[1])}</div></div>`;
             }
             cellsHtml += `<td style="${cStyle}">${inner}</td>`;
             if (hasBreakCol && data.periods[idx] === data.breakAfter) {
@@ -459,7 +462,7 @@ function buildSectionGroups(
           summaries.forEach((summary, idx) => {
             const isFree = summary === 'Free';
             const cellText = isFree ? '—' : summary;
-            cellsHtml += `<td style="${cStyle}">${esc(cellText)}</td>`;
+            cellsHtml += `<td style="${cStyle}">${escWrap(cellText)}</td>`;
             if (hasBreakCol && data.periods[idx] === data.breakAfter) {
               cellsHtml += breakTdHtml;
             }
@@ -509,7 +512,7 @@ function buildSectionGroups(
 
           let cellsHtml = '';
           dayCells.forEach((line, idx) => {
-            cellsHtml += `<td style="${cStyle}"><div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${esc(line)}</div></td>`;
+            cellsHtml += `<td style="${cStyle}"><div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${escWrap(line)}</div></td>`;
             if (hasBreakCol && data.periods[idx] === data.breakAfter) {
               cellsHtml += breakTdHtml;
             }
@@ -542,10 +545,10 @@ function buildSectionGroups(
       if (showTimes) {
         tr += `<th style="width:20%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>`;
         tr += `<th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME</th>`;
-        tr += `<th style="text-align:left; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>`;
+        tr += `<th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>`;
       } else {
         tr += `<th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>`;
-        tr += `<th style="text-align:left; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>`;
+        tr += `<th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>`;
       }
       tr += `</tr>`;
       return tr;
@@ -563,21 +566,21 @@ function buildSectionGroups(
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
           const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
           const timeStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
-          const cStyle = `text-align:left; padding:${padV}px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+          const cStyle = `text-align:center; vertical-align:middle; padding:${padV}px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
           if (showTimes) {
             return `
               <tr style="background:#fff;">
                 <td style="${fStyle}">Period ${p}</td>
                 <td style="${timeStyle}">${esc(timeStr)}</td>
-                <td style="${cStyle}">${esc(summary)}</td>
+                <td style="${cStyle}">${escWrap(summary)}</td>
               </tr>
             `;
           }
           return `
             <tr style="background:#fff;">
               <td style="${fStyle}">Period ${p}</td>
-              <td style="${cStyle}">${esc(summary)}</td>
+              <td style="${cStyle}">${escWrap(summary)}</td>
             </tr>
           `;
         }
@@ -910,7 +913,7 @@ export function buildPrintableHtml(
     ">
       ${page.headerHtml}
       <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
-        <table style="width:100%; border-collapse:collapse; table-layout:fixed; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
           <thead>${page.tableHeaderHtml}</thead>
           <tbody>${page.rowsHtml}</tbody>
         </table>
