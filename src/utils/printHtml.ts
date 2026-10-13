@@ -65,8 +65,8 @@ export function wholeSchoolCellLines(
 /* ---------- Cell text for a specific day ---------- */
 export function cellTextForDay(c: ClassItem, pi: number, dayIdx: number): string {
   const s2 = c[5] ? c[5][pi] : null;
-  const t1 = c[4][pi];
-  const sub1 = c[3][pi] || '—';
+  const t1 = (c[4] && c[4][pi]) || '';
+  const sub1 = (c[3] && c[3][pi]) || '—';
 
   if (!s2 || (!s2.subject && !s2.teacher)) {
     return t1 ? `${sub1} - ${t1}` : sub1;

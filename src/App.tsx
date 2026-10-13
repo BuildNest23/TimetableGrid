@@ -15,7 +15,6 @@ import { FreeStaffView } from './views/FreeStaffView';
 import { TeachersRosterView } from './views/TeachersRosterView';
 import { SchoolSetupView } from './views/SchoolSetupView';
 import { MasterDataView } from './views/MasterDataView';
-import { PrintingView } from './views/PrintingView';
 import { PrintStudioView } from './views/PrintStudioView';
 
 const TAB_TITLES: Record<ActiveTab, string> = {
@@ -27,15 +26,15 @@ const TAB_TITLES: Record<ActiveTab, string> = {
   roster: 'Teachers Roster',
   settings: 'School Setup',
   master: 'Teachers, Classes & Subjects',
-  printing: 'Print & Export',
   printstudio: 'Print Studio'
 };
 
 const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     try {
-      const saved = localStorage.getItem('utCurrentTab') as ActiveTab | null;
-      if (saved && saved in TAB_TITLES) return saved;
+      const saved = localStorage.getItem('utCurrentTab');
+      if (saved === 'printing') return 'printstudio';
+      if (saved && (saved in TAB_TITLES)) return saved as ActiveTab;
     } catch { /* ignore */ }
     return 'dashboard';
   });
@@ -109,7 +108,6 @@ const AppContent: React.FC = () => {
           {activeTab === 'roster' && <TeachersRosterView />}
           {activeTab === 'settings' && <SchoolSetupView onNavigate={handleSelectTab} />}
           {activeTab === 'master' && <MasterDataView />}
-          {activeTab === 'printing' && <PrintingView />}
           {activeTab === 'printstudio' && <PrintStudioView />}
         </ErrorBoundary>
       </main>

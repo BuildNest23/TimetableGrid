@@ -4,8 +4,18 @@ import { esc, wholeSchoolCellLines, cellTextForDay } from './printHtml';
 // Escapes text and allows a line break after every "/" so long names like Computer/Drawing wrap inside the cell.
 const escWrap = (s: unknown): string => esc(s).replace(/\//g, '/<wbr>');
 
+export type PrintStudioDocType =
+  | 'whole'
+  | 'allteachers'
+  | 'class'
+  | 'teacher'
+  | 'allclasses'
+  | 'schooltimings'
+  | 'roster'
+  | 'teacherstrips';
+
 export interface PageLayoutOptions {
-  type: 'whole' | 'allteachers' | 'class' | 'teacher' | 'roster';
+  type: PrintStudioDocType;
   selectedClass?: string;
   selectedTeacher?: string;
   fontPt: number;
@@ -13,6 +23,7 @@ export interface PageLayoutOptions {
   showTimes: boolean;
   showBreakCol: boolean;
   oneSectionPerPage?: boolean;
+  stripsGrid?: string;
   teacherPeriodSummary: (t: string, pi: number) => string;
   getTeacherTotalPeriods?: (t: string) => number;
   safetyReductionPx?: number;
@@ -27,6 +38,7 @@ export interface ComputedPage {
   rowsHtml: string;
   footerHtml: string;
   rowCount: number;
+  customBodyHtml?: string;
 }
 
 export interface PaginationResult {
@@ -645,11 +657,223 @@ function buildSectionGroups(
     };
   });
 
-  return [{
-    title: 'Teachers Roster',
-    tableHeaderHtml: buildRosterHeader(),
-    rowDefs: rosterRows
-  }];
+  if (type === 'roster') {
+    return [{
+      title: 'Teachers Roster',
+      tableHeaderHtml: buildRosterHeader(),
+      rowDefs: rosterRows
+    }];
+  }
+
+  // =========================================================================
+  // 6. ALL CLASSES (ONE PAGE EACH)
+  // =========================================================================
+  if (type === 'allclasses') {
+    const buildTableHeader = () => {
+      let tr = `<tr style="background:#fff;">`;
+      tr += `<th style="width:14%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DAY</th>`;
+      periodCols.forEach(col => {
+        tr += col.html;
+        if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
+      });
+      tr += `</tr>`;
+      return tr;
+    };
+
+    return data.classes.map(targetClass => {
+      const rowDefs: TableRowDef[] = data.days.map((dayName, dayIdx) => {
+        const dayCells = data.periods.map((_, pi) => cellTextForDay(targetClass, pi, dayIdx));
+
+        return {
+          isSection: false,
+          label: dayName,
+          render: (addedPaddingV: number) => {
+            const padV = (cellPaddingV + addedPaddingV).toFixed(2);
+            const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
+            const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+
+            let cellsHtml = '';
+            dayCells.forEach((line, idx) => {
+              cellsHtml += `<td style="${cStyle}"><div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${escWrap(line)}</div></td>`;
+              if (hasBreakCol && data.periods[idx] === data.breakAfter) {
+                cellsHtml += breakTdHtml;
+              }
+            });
+
+            return `<tr style="background:#fff;"><td style="${fStyle}">${esc(dayName)}</td>${cellsHtml}</tr>`;
+          }
+        };
+      });
+
+      const inchargePart = targetClass[1] ? ` — Incharge: ${targetClass[1]}` : '';
+      return {
+        title: `${targetClass[0]}${inchargePart}`,
+        tableHeaderHtml: buildTableHeader(),
+        rowDefs
+      };
+    });
+  }
+
+  // =========================================================================
+  // 7. SCHOOL TIMINGS
+  // =========================================================================
+  if (type === 'schooltimings') {
+    const title = data.schoolTimingsTitle || 'SCHOOL TIMINGS';
+    const wref = data.effectiveFromDate ? `w.e.f. ${data.effectiveFromDate}` : '';
+
+    const calcDuration = (s: string, e: string): string => {
+      if (!s || !e) return '—';
+      const parse = (x: string): number | null => {
+        const m = x.trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+        if (!m) return null;
+        let h = parseInt(m[1], 10);
+        const min = parseInt(m[2], 10);
+        if (m[3] === 'PM' && h < 12) h += 12;
+        if (m[3] === 'AM' && h === 12) h = 0;
+        return h * 60 + min;
+      };
+      const ss = parse(s), ee = parse(e);
+      if (ss === null || ee === null) return '—';
+      let diff = ee - ss;
+      if (diff < 0) diff += 24 * 60;
+      return `${diff} min`;
+    };
+
+    const buildTimingsHeader = () => `
+      <tr style="background:#fff;">
+        <th style="width:24%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+        <th style="width:42%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME SLOT</th>
+        <th style="width:34%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DURATION (MINS)</th>
+      </tr>
+    `;
+
+    const buildTimingRowDefs = (
+      times: { start: string; end: string }[] | undefined,
+      assembly: { start: string; end: string } | undefined,
+      breakAfter: number,
+      breakLabel: string
+    ): TableRowDef[] => {
+      const defs: TableRowDef[] = [];
+      if (assembly && (assembly.start || assembly.end)) {
+        defs.push({
+          isSection: false,
+          label: 'Assembly',
+          render: (addedPaddingV: number) => {
+            const padV = (cellPaddingV + addedPaddingV).toFixed(2);
+            const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+            const cStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+            return `
+              <tr style="background:#fff;">
+                <td style="${fStyle}">Assembly</td>
+                <td style="${cStyle}">${esc(assembly.start || '—')} - ${esc(assembly.end || '—')}</td>
+                <td style="${cStyle}">${esc(calcDuration(assembly.start || '', assembly.end || ''))}</td>
+              </tr>
+            `;
+          }
+        });
+      }
+
+      data.periods.forEach((p, i) => {
+        const pt = (times && times[i]) || { start: '', end: '' };
+        defs.push({
+          isSection: false,
+          label: `Period ${p}`,
+          render: (addedPaddingV: number) => {
+            const padV = (cellPaddingV + addedPaddingV).toFixed(2);
+            const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+            const cStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+            return `
+              <tr style="background:#fff;">
+                <td style="${fStyle}">Period ${p}</td>
+                <td style="${cStyle}">${esc(pt.start || '—')} - ${esc(pt.end || '—')}</td>
+                <td style="${cStyle}">${esc(calcDuration(pt.start || '', pt.end || ''))}</td>
+              </tr>
+            `;
+          }
+        });
+
+        if (breakAfter === p && i < data.periods.length - 1) {
+          const bs = pt.end || '—';
+          const be = (times && times[i + 1] && times[i + 1].start) || '—';
+          defs.push({
+            isSection: false,
+            label: breakLabel,
+            render: (addedPaddingV: number) => {
+              const padV = (cellPaddingV + addedPaddingV).toFixed(2);
+              const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+              const cStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+              return `
+                <tr style="background:#fff;">
+                  <td style="${fStyle}">${esc(breakLabel)}</td>
+                  <td style="${cStyle}">${esc(bs)} - ${esc(be)}</td>
+                  <td style="${cStyle}">${bs !== '—' && be !== '—' ? esc(calcDuration(bs, be)) : '—'}</td>
+                </tr>
+              `;
+            }
+          });
+        }
+      });
+
+      return defs;
+    };
+
+    const ft = data.fridayTimings;
+    const fridayHasAnyData = !!(
+      ft &&
+      ((ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end)) ||
+        (Array.isArray(ft.periodTimes) && ft.periodTimes.some(pt => pt && (pt.start || pt.end))))
+    );
+    const fridayDayName = ft ? (data.days[ft.dayIndex] || 'Friday') : 'Friday';
+
+    const mainDefs = buildTimingRowDefs(data.periodTimes || [], data.assemblyTime, data.breakAfter, 'BREAK');
+
+    if (fridayHasAnyData && ft && ft.enabled) {
+      // 2 separate sheets
+      const fridayDefs = buildTimingRowDefs(ft.periodTimes || [], ft.assemblyTime, ft.breakAfter, ft.breakLabel || 'BREAK');
+      return [
+        {
+          title: `${title}${wref ? ` (${wref})` : ''}`,
+          tableHeaderHtml: buildTimingsHeader(),
+          rowDefs: mainDefs
+        },
+        {
+          title: `${title} — ${fridayDayName}${wref ? ` (${wref})` : ''}`,
+          tableHeaderHtml: buildTimingsHeader(),
+          rowDefs: fridayDefs
+        }
+      ];
+    } else if (fridayHasAnyData && ft) {
+      // Merged single sheet with divider row
+      const fridayDefs = buildTimingRowDefs(ft.periodTimes || [], ft.assemblyTime, ft.breakAfter, ft.breakLabel || 'BREAK');
+      const dividerDef: TableRowDef = {
+        isSection: true,
+        label: fridayDayName,
+        render: (addedPaddingV: number) => {
+          const padV = (cellPaddingV + addedPaddingV + 2).toFixed(2);
+          return `
+            <tr style="background:#fff;">
+              <td colspan="3" style="text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; letter-spacing:0.08em; text-transform:uppercase; padding:${padV}px 8px; ${rowBorder} color:#000;">
+                ${esc(fridayDayName)}${ft.note ? ` — ${esc(ft.note)}` : ''}
+              </td>
+            </tr>
+          `;
+        }
+      };
+      return [{
+        title: `${title}${wref ? ` (${wref})` : ''}`,
+        tableHeaderHtml: buildTimingsHeader(),
+        rowDefs: [...mainDefs, dividerDef, ...fridayDefs]
+      }];
+    }
+
+    return [{
+      title: `${title}${wref ? ` (${wref})` : ''}`,
+      tableHeaderHtml: buildTimingsHeader(),
+      rowDefs: mainDefs
+    }];
+  }
+
+  return [];
 }
 
 /**
@@ -669,6 +893,91 @@ export function computePrintStudioPages(
   const isLandscape = orientation === 'landscape';
   const pageWidth = isLandscape ? A4_LANDSCAPE.width : A4_PORTRAIT.width;
   const pageHeight = isLandscape ? A4_LANDSCAPE.height : A4_PORTRAIT.height;
+
+  // Dedicated cut-out teacher strips layout
+  if (type === 'teacherstrips') {
+    const teachers = (data.hideEmptyTeachersInTT && opts.getTeacherTotalPeriods)
+      ? data.teachers.filter(t => opts.getTeacherTotalPeriods!(t) > 0)
+      : data.teachers;
+
+    const defaultGrid = isLandscape ? '4x2' : '2x4';
+    const grid = opts.stripsGrid || defaultGrid;
+    const [colsStr, rowsStr] = grid.split('x');
+    const cols = parseInt(colsStr, 10) || (isLandscape ? 4 : 2);
+    const rows = parseInt(rowsStr, 10) || (isLandscape ? 2 : 4);
+    const perPage = cols * rows;
+
+    const totalTeachers = teachers.length;
+    const pageCount = Math.max(1, Math.ceil(totalTeachers / perPage));
+    const pages: ComputedPage[] = [];
+
+    const teacherNamePt = (fontPt * 1.15).toFixed(1);
+    const periodPt = (fontPt * 0.92).toFixed(1);
+
+    for (let pageIdx = 0; pageIdx < pageCount; pageIdx++) {
+      const pageTeachers = teachers.slice(pageIdx * perPage, (pageIdx + 1) * perPage);
+      let boxesHtml = '';
+
+      pageTeachers.forEach(t => {
+        const periodRows = data.periods.map((p, pi) => {
+          const summary = opts.teacherPeriodSummary(t, pi);
+          return `
+            <tr style="height:1px;">
+              <td style="padding:2px 4px; border:0.75pt solid #000; font-size:${periodPt}pt; font-weight:700; text-align:center; width:22%; color:#000;">P${p}</td>
+              <td style="padding:2px 4px; border:0.75pt solid #000; font-size:${periodPt}pt; text-align:left; color:#000; font-weight:500;">${escWrap(summary)}</td>
+            </tr>
+          `;
+        }).join('');
+
+        boxesHtml += `
+          <div style="border:1.2pt dashed #000; padding:2mm; box-sizing:border-box; display:flex; flex-direction:column; background:#fff; overflow:hidden; height:100%;">
+            <div style="text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${teacherNamePt}pt; border-bottom:1pt solid #000; padding-bottom:1mm; margin-bottom:1.5mm; color:#000;">
+              ${esc(t)}
+            </div>
+            <table style="width:100%; height:100%; border-collapse:collapse; table-layout:fixed; border:0.75pt solid #000; background:#fff;">
+              <tbody>${periodRows}</tbody>
+            </table>
+          </div>
+        `;
+      });
+
+      const customBodyHtml = `
+        <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); grid-template-rows:repeat(${rows}, 1fr); gap:4mm; height:100%; box-sizing:border-box; padding:2mm;">
+          ${boxesHtml}
+        </div>
+      `;
+
+      pages.push({
+        pageNumber: pageIdx + 1,
+        totalPages: pageCount,
+        isFirstPage: pageIdx === 0,
+        headerHtml: '',
+        tableHeaderHtml: '',
+        rowsHtml: '',
+        footerHtml: '',
+        rowCount: pageTeachers.length,
+        customBodyHtml
+      });
+    }
+
+    const lastPageTeachers = totalTeachers % perPage === 0 && totalTeachers > 0
+      ? perPage
+      : totalTeachers % perPage;
+    const lastPageFullness = totalTeachers === 0 ? 0 : Math.round((lastPageTeachers / perPage) * 100);
+
+    return {
+      pages,
+      pageCount,
+      lastPageFullness,
+      fontPt,
+      orientation,
+      widthPx: pageWidth,
+      heightPx: pageHeight,
+      totalExpectedRows: totalTeachers,
+      totalRowsShown: totalTeachers,
+      allRowsFit: true
+    };
+  }
 
   // Build section groups for the chosen timetable type
   const sectionGroups = buildSectionGroups(data, opts);
@@ -895,29 +1204,53 @@ export function buildPrintableHtml(
   const isLandscape = orientation === 'landscape';
   const pageHeightMm = isLandscape ? '194mm' : '281mm';
 
-  return layout.pages.map((page, idx) => `
-    <div class="print-studio-page" style="
-      box-sizing: border-box;
-      width: 100%;
-      height: ${pageHeightMm};
-      overflow: visible;
-      padding: 0;
-      background: #fff;
-      color: #000;
-      display: flex;
-      flex-direction: column;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      page-break-after: ${idx === layout.pages.length - 1 ? 'auto' : 'always'};
-      page-break-inside: avoid;
-    ">
-      ${page.headerHtml}
-      <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
-        <table style="width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
-          <thead>${page.tableHeaderHtml}</thead>
-          <tbody>${page.rowsHtml}</tbody>
-        </table>
+  return layout.pages.map((page, idx) => {
+    if (page.customBodyHtml) {
+      return `
+        <div class="print-studio-page" style="
+          box-sizing: border-box;
+          width: 100%;
+          height: ${pageHeightMm};
+          overflow: visible;
+          padding: 0;
+          background: #fff;
+          color: #000;
+          display: flex;
+          flex-direction: column;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          page-break-after: ${idx === layout.pages.length - 1 ? 'auto' : 'always'};
+          page-break-inside: avoid;
+        ">
+          ${page.customBodyHtml}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="print-studio-page" style="
+        box-sizing: border-box;
+        width: 100%;
+        height: ${pageHeightMm};
+        overflow: visible;
+        padding: 0;
+        background: #fff;
+        color: #000;
+        display: flex;
+        flex-direction: column;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        page-break-after: ${idx === layout.pages.length - 1 ? 'auto' : 'always'};
+        page-break-inside: avoid;
+      ">
+        ${page.headerHtml}
+        <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
+          <table style="width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+            <thead>${page.tableHeaderHtml}</thead>
+            <tbody>${page.rowsHtml}</tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }

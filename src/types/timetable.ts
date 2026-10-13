@@ -254,7 +254,6 @@ export type ActiveTab =
   | 'substitute'
   | 'freestaff'
   | 'roster'
-  | 'printing'
   | 'printstudio';
 export const EMPTY_TIMETABLE_DATA: TimetableData = {
   schoolName: "",

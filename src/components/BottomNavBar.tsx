@@ -10,7 +10,6 @@ import {
   Clock,
   Users,
   Printer,
-  FileSpreadsheet,
   X
 } from 'lucide-react';
 import { ActiveTab } from '../types/timetable';
@@ -36,7 +35,6 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab, onSelect
     { id: 'freestaff' as ActiveTab, label: 'Free Staff', icon: Clock, desc: 'Find teachers with no scheduled class' },
     { id: 'roster' as ActiveTab, label: 'Teachers Roster', icon: Users, desc: 'Staff directory with groups & workloads' },
     { id: 'settings' as ActiveTab, label: 'School Setup', icon: Settings, desc: 'Configure periods, days, and backup' },
-    { id: 'printing' as ActiveTab, label: 'Print & Export', icon: FileSpreadsheet, desc: 'Excel export, teacher strips & by-section' },
   ];
 
   const isMoreActive = moreTabs.some(t => t.id === currentTab);

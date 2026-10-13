@@ -5,12 +5,14 @@ import {
   findBestFitFontSize,
   buildPrintableHtml,
   PageLayoutOptions,
+  PrintStudioDocType,
   A4_LANDSCAPE,
   A4_PORTRAIT,
   HATCHED_BG,
   MARGIN_PX
 } from '../utils/printEngine';
 import { esc } from '../utils/printHtml';
+import { exportTimetableToExcel } from '../utils/excelExport';
 import {
   Printer,
   Maximize2,
@@ -23,16 +25,27 @@ import {
   Sparkles,
   Info,
   ChevronDown,
-  AlertTriangle
+  AlertTriangle,
+  FileSpreadsheet,
+  Download,
+  Scissors
 } from 'lucide-react';
 
 export const PrintStudioView: React.FC = () => {
-  const { data, updateData, teacherPeriodSummary, getTeacherTotalPeriods } = useTimetable();
+  const {
+    data,
+    updateData,
+    teacherPeriodSummary,
+    getTeacherTotalPeriods,
+    getLeavesForDate
+  } = useTimetable();
 
   // Settings state (with persistence into TimetableData)
-  const [type, setType] = useState<'whole' | 'allteachers' | 'class' | 'teacher' | 'roster'>('whole');
+  const [type, setType] = useState<PrintStudioDocType>('whole');
   const [selectedClass, setSelectedClass] = useState<string>(data.classes[0]?.[0] || '');
   const [selectedTeacher, setSelectedTeacher] = useState<string>(data.teachers[0] || '');
+  const [stripsGrid, setStripsGrid] = useState<string>('4x2');
+  const [isExportingExcel, setIsExportingExcel] = useState<boolean>(false);
 
   const [fontPt, setFontPt] = useState<number>(() => data.printFontPt || 7.5);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>(() => data.printOrientation || 'landscape');
@@ -95,16 +108,26 @@ export const PrintStudioView: React.FC = () => {
     resetSafetyState();
     setOrientation(o);
     persistChanges({ printOrientation: o });
+    if (type === 'teacherstrips') {
+      setStripsGrid(o === 'landscape' ? '4x2' : '2x4');
+    }
   };
 
-  const handleTypeChange = (t: 'whole' | 'allteachers' | 'class' | 'teacher' | 'roster') => {
+  const handleTypeChange = (t: PrintStudioDocType) => {
     resetSafetyState();
     setType(t);
-    // Teacher wise is portrait by default
-    if (t === 'teacher') {
+    // Portrait by default for Teacher Wise & School Timings
+    if (t === 'teacher' || t === 'schooltimings') {
       setOrientation('portrait');
       persistChanges({ printOrientation: 'portrait' });
+    } else if (t === 'teacherstrips') {
+      setStripsGrid(orientation === 'portrait' ? '2x4' : '4x2');
     }
+  };
+
+  const handleStripsGridChange = (g: string) => {
+    resetSafetyState();
+    setStripsGrid(g);
   };
 
   const handleClassChange = (c: string) => {
@@ -136,6 +159,25 @@ export const PrintStudioView: React.FC = () => {
     setOneSectionPerPage(prev => !prev);
   };
 
+  const handleDownloadExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const absentTeacher = localStorage.getItem('utAbsentTeacher') || '';
+      await exportTimetableToExcel(
+        data,
+        teacherPeriodSummary,
+        getTeacherTotalPeriods,
+        absentTeacher,
+        getLeavesForDate
+      );
+    } catch (err) {
+      console.error('Excel export error:', err);
+      alert('Failed to generate Excel workbook.');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   // Layout calculations
   const layoutOpts: PageLayoutOptions = useMemo(() => ({
     type,
@@ -146,10 +188,24 @@ export const PrintStudioView: React.FC = () => {
     showTimes,
     showBreakCol,
     oneSectionPerPage,
+    stripsGrid,
     teacherPeriodSummary,
     getTeacherTotalPeriods,
     safetyReductionPx
-  }), [type, selectedClass, selectedTeacher, fontPt, orientation, showTimes, showBreakCol, oneSectionPerPage, teacherPeriodSummary, getTeacherTotalPeriods, safetyReductionPx]);
+  }), [
+    type,
+    selectedClass,
+    selectedTeacher,
+    fontPt,
+    orientation,
+    showTimes,
+    showBreakCol,
+    oneSectionPerPage,
+    stripsGrid,
+    teacherPeriodSummary,
+    getTeacherTotalPeriods,
+    safetyReductionPx
+  ]);
 
   const layoutResult = useMemo(() => {
     return computePrintStudioPages(data, layoutOpts);
@@ -166,6 +222,7 @@ export const PrintStudioView: React.FC = () => {
       showTimes,
       showBreakCol,
       oneSectionPerPage,
+      stripsGrid,
       teacherPeriodSummary,
       getTeacherTotalPeriods
     }, targetPages);
@@ -335,27 +392,92 @@ export const PrintStudioView: React.FC = () => {
             <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-2">
               Timetable Type
             </label>
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
-              {[
-                { id: 'whole' as const, label: 'Whole School' },
-                { id: 'allteachers' as const, label: 'All Teachers' },
-                { id: 'class' as const, label: 'Class Wise' },
-                { id: 'teacher' as const, label: 'Teacher Wise' },
-                { id: 'roster' as const, label: 'Teachers Roster' },
-              ].map(opt => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => handleTypeChange(opt.id)}
-                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition text-center ${
-                    type === opt.id
-                      ? 'bg-white dark:bg-stone-900 text-emerald-800 dark:text-emerald-300 shadow-xs'
-                      : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div className="space-y-3">
+              {/* Group 1: Timetables */}
+              <div>
+                <div className="text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-1 px-1">
+                  Timetables
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                  {[
+                    { id: 'whole' as const, label: 'Whole School' },
+                    { id: 'allteachers' as const, label: 'All Teachers' },
+                    { id: 'class' as const, label: 'Class Wise' },
+                    { id: 'teacher' as const, label: 'Teacher Wise' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleTypeChange(opt.id)}
+                      className={`py-2 px-2 rounded-lg text-xs font-bold transition text-center ${
+                        type === opt.id
+                          ? 'bg-white dark:bg-stone-900 text-emerald-800 dark:text-emerald-300 shadow-xs'
+                          : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => handleTypeChange('allclasses')}
+                    className={`col-span-2 py-2 px-2.5 rounded-lg text-xs font-bold transition text-center ${
+                      type === 'allclasses'
+                        ? 'bg-white dark:bg-stone-900 text-emerald-800 dark:text-emerald-300 shadow-xs'
+                        : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                    }`}
+                  >
+                    All Classes (one page each)
+                  </button>
+                </div>
+              </div>
+
+              {/* Group 2: Sheets */}
+              <div>
+                <div className="text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-1 px-1">
+                  Sheets
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                  {[
+                    { id: 'schooltimings' as const, label: 'School Timings' },
+                    { id: 'roster' as const, label: 'Teachers Roster' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleTypeChange(opt.id)}
+                      className={`py-2 px-2 rounded-lg text-xs font-bold transition text-center ${
+                        type === opt.id
+                          ? 'bg-white dark:bg-stone-900 text-emerald-800 dark:text-emerald-300 shadow-xs'
+                          : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Group 3: Cut-out */}
+              <div>
+                <div className="text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-1 px-1">
+                  Cut-out
+                </div>
+                <div className="grid grid-cols-1 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => handleTypeChange('teacherstrips')}
+                    className={`py-2 px-2.5 rounded-lg text-xs font-bold transition text-center flex items-center justify-center gap-2 ${
+                      type === 'teacherstrips'
+                        ? 'bg-white dark:bg-stone-900 text-emerald-800 dark:text-emerald-300 shadow-xs'
+                        : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                    }`}
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>Teacher Strips</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Target Selectors if class or teacher wise */}
@@ -400,6 +522,42 @@ export const PrintStudioView: React.FC = () => {
             )}
           </div>
 
+          {/* Strips per page grid (only for Teacher Strips, above the size slider) */}
+          {type === 'teacherstrips' && (
+            <div>
+              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1.5">
+                Strips per page (grid)
+              </label>
+              <div className="relative">
+                <select
+                  value={stripsGrid}
+                  onChange={(e) => handleStripsGridChange(e.target.value)}
+                  className="w-full px-3 py-2 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs font-bold text-stone-900 dark:text-stone-100 appearance-none focus:outline-hidden focus:ring-2 focus:ring-emerald-600"
+                >
+                  {orientation === 'landscape' ? (
+                    <>
+                      <option value="4x2">4 × 2 (8 strips per page)</option>
+                      <option value="3x2">3 × 2 (6 strips per page)</option>
+                      <option value="5x2">5 × 2 (10 strips per page)</option>
+                      <option value="4x3">4 × 3 (12 strips per page)</option>
+                      <option value="2x2">2 × 2 (4 strips per page)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="2x4">2 × 4 (8 strips per page)</option>
+                      <option value="2x3">2 × 3 (6 strips per page)</option>
+                      <option value="2x5">2 × 5 (10 strips per page)</option>
+                      <option value="3x4">3 × 4 (12 strips per page)</option>
+                      <option value="3x3">3 × 3 (9 strips per page)</option>
+                      <option value="2x2">2 × 2 (4 strips per page)</option>
+                    </>
+                  )}
+                </select>
+                <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-2.5 pointer-events-none" />
+              </div>
+            </div>
+          )}
+
           {/* Size Slider */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -426,27 +584,29 @@ export const PrintStudioView: React.FC = () => {
               <span>16 pt</span>
             </div>
 
-            {/* Auto-Fit Buttons */}
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              <button
-                type="button"
-                onClick={() => handleAutoFit(1)}
-                className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-800 dark:hover:text-emerald-300 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95 border border-stone-200 dark:border-stone-700"
-                title="Find the largest text size that fits on 1 page"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Fit to 1 page</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAutoFit(2)}
-                className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-800 dark:hover:text-emerald-300 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95 border border-stone-200 dark:border-stone-700"
-                title="Find the largest text size that fits within 2 pages"
-              >
-                <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Fit to 2 pages</span>
-              </button>
-            </div>
+            {/* Auto-Fit Buttons (for standard row-packed timetables) */}
+            {type !== 'teacherstrips' && (
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={() => handleAutoFit(1)}
+                  className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-800 dark:hover:text-emerald-300 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95 border border-stone-200 dark:border-stone-700"
+                  title="Find the largest text size that fits on 1 page"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Fit to 1 page</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAutoFit(2)}
+                  className="py-2 px-3 bg-stone-100 dark:bg-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-800 dark:hover:text-emerald-300 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95 border border-stone-200 dark:border-stone-700"
+                  title="Find the largest text size that fits within 2 pages"
+                >
+                  <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Fit to 2 pages</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Orientation Toggle */}
@@ -483,48 +643,52 @@ export const PrintStudioView: React.FC = () => {
           </div>
 
           {/* Checkboxes */}
-          <div className="space-y-2.5 pt-1 border-t border-stone-100 dark:border-stone-800">
-            <button
-              type="button"
-              onClick={handleToggleTimes}
-              className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
-            >
-              {showTimes ? (
-                <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
-              ) : (
-                <Square className="w-4 h-4 text-stone-400 shrink-0" />
-              )}
-              <span>Show period times in header</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleToggleBreak}
-              className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
-            >
-              {showBreakCol ? (
-                <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
-              ) : (
-                <Square className="w-4 h-4 text-stone-400 shrink-0" />
-              )}
-              <span>Show hatched break column</span>
-            </button>
-
-            {type === 'whole' && (
+          {(type === 'whole' || type === 'allteachers' || type === 'class' || type === 'teacher' || type === 'allclasses') && (
+            <div className="space-y-2.5 pt-1 border-t border-stone-100 dark:border-stone-800">
               <button
                 type="button"
-                onClick={handleToggleOneSectionPerPage}
+                onClick={handleToggleTimes}
                 className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
               >
-                {oneSectionPerPage ? (
+                {showTimes ? (
                   <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
                 ) : (
                   <Square className="w-4 h-4 text-stone-400 shrink-0" />
                 )}
-                <span>One section per page</span>
+                <span>Show period times in header</span>
               </button>
-            )}
-          </div>
+
+              {type !== 'teacher' && (
+                <button
+                  type="button"
+                  onClick={handleToggleBreak}
+                  className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
+                >
+                  {showBreakCol ? (
+                    <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
+                  ) : (
+                    <Square className="w-4 h-4 text-stone-400 shrink-0" />
+                  )}
+                  <span>Show hatched break column</span>
+                </button>
+              )}
+
+              {type === 'whole' && (
+                <button
+                  type="button"
+                  onClick={handleToggleOneSectionPerPage}
+                  className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
+                >
+                  {oneSectionPerPage ? (
+                    <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
+                  ) : (
+                    <Square className="w-4 h-4 text-stone-400 shrink-0" />
+                  )}
+                  <span>One section per page</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Print Button */}
           <button
@@ -540,6 +704,28 @@ export const PrintStudioView: React.FC = () => {
           >
             <Printer className="w-4 h-4" />
             <span>Print Timetable</span>
+          </button>
+        </div>
+
+        {/* Export Section */}
+        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-3xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded-lg">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-stone-900 dark:text-stone-100">Export Timetable</h3>
+              <p className="text-[10px] text-stone-500">Excel Workbook (.xlsx)</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleDownloadExcel}
+            disabled={isExportingExcel}
+            className="w-full min-h-[42px] py-2.5 px-4 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-emerald-200" />
+            <span>{isExportingExcel ? 'Generating .xlsx...' : 'Download Excel (.xlsx)'}</span>
           </button>
         </div>
 
@@ -609,37 +795,47 @@ export const PrintStudioView: React.FC = () => {
                 }}
                 className="bg-white text-black shadow-lg rounded-xs border border-stone-300 flex flex-col overflow-visible select-text font-sans"
               >
-                {/* Title block on page 1 */}
-                {page.isFirstPage && (
+                {page.customBodyHtml ? (
                   <div
-                    dangerouslySetInnerHTML={{ __html: page.headerHtml }}
-                    className="shrink-0"
+                    ref={(el) => { pageInnerRefs.current[page.pageNumber - 1] = el; }}
+                    className="flex-1 flex flex-col min-h-0 overflow-visible"
+                    dangerouslySetInnerHTML={{ __html: page.customBodyHtml }}
                   />
-                )}
+                ) : (
+                  <>
+                    {/* Title block on page 1 */}
+                    {page.isFirstPage && (
+                      <div
+                        dangerouslySetInnerHTML={{ __html: page.headerHtml }}
+                        className="shrink-0"
+                      />
+                    )}
 
-                {/* Table with repeated header */}
-                <div
-                  ref={(el) => { pageInnerRefs.current[page.pageNumber - 1] = el; }}
-                  className="flex-1 flex flex-col min-h-0 overflow-visible"
-                >
-                  <table
-                    style={{
-                      width: '100%',
-                      borderCollapse: 'collapse',
-                      tableLayout: 'fixed',
-                      overflowWrap: 'anywhere',
-                      wordBreak: 'break-word',
-                      background: '#fff',
-                      border: '0.75pt solid #000',
-                      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-                      WebkitPrintColorAdjust: 'exact',
-                      printColorAdjust: 'exact'
-                    }}
-                  >
-                    <thead dangerouslySetInnerHTML={{ __html: page.tableHeaderHtml }} />
-                    <tbody dangerouslySetInnerHTML={{ __html: page.rowsHtml }} />
-                  </table>
-                </div>
+                    {/* Table with repeated header */}
+                    <div
+                      ref={(el) => { pageInnerRefs.current[page.pageNumber - 1] = el; }}
+                      className="flex-1 flex flex-col min-h-0 overflow-visible"
+                    >
+                      <table
+                        style={{
+                          width: '100%',
+                          borderCollapse: 'collapse',
+                          tableLayout: 'fixed',
+                          overflowWrap: 'anywhere',
+                          wordBreak: 'break-word',
+                          background: '#fff',
+                          border: '0.75pt solid #000',
+                          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+                          WebkitPrintColorAdjust: 'exact',
+                          printColorAdjust: 'exact'
+                        }}
+                      >
+                        <thead dangerouslySetInnerHTML={{ __html: page.tableHeaderHtml }} />
+                        <tbody dangerouslySetInnerHTML={{ __html: page.rowsHtml }} />
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ))}
