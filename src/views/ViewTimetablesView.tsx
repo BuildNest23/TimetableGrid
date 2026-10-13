@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useTimetable } from '../context/TimetableContext';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   buildClassCardHTML,
   buildTeacherCardHTML,
@@ -38,6 +39,8 @@ export const ViewTimetablesView: React.FC = () => {
   } = useTimetable();
 
   const [search, setSearch] = useState<string>('');
+  // Simple on/off: show the small gray Friday time under the Normal time on cards
+  const [showFridayOnCards, setShowFridayOnCards] = usePersistentState<boolean>('utShowFridayOnCards', true);
   const [popupItem, setPopupItem] = useState<PopupItem | null>(null);
   const [history, setHistory] = useState<PopupItem[]>([]);
 
@@ -329,22 +332,35 @@ export const ViewTimetablesView: React.FC = () => {
     return () => observer.disconnect();
   }, [popupItem]);
 
+  // Data used for the popup cards: when the checkbox is off, Friday times are removed
+  const cardData = useMemo(() => {
+    if (showFridayOnCards || !data.fridayTimings) return data;
+    return {
+      ...data,
+      fridayTimings: {
+        ...data.fridayTimings,
+        periodTimes: data.fridayTimings.periodTimes.map(() => ({ start: '', end: '' })),
+        assemblyTime: { start: '', end: '' }
+      }
+    };
+  }, [data, showFridayOnCards]);
+
   // Active item's card HTML (always shows both times, independent of strip toggle)
   const cardHtml = useMemo(() => {
     if (!popupItem) return '';
     if (popupItem.type === 'class') {
-      return buildClassCardHTML(data, String(popupItem.id));
+      return buildClassCardHTML(cardData, String(popupItem.id));
     }
     if (popupItem.type === 'teacher') {
-      return buildTeacherCardHTML(data, String(popupItem.id), teacherPeriodSummary);
+      return buildTeacherCardHTML(cardData, String(popupItem.id), teacherPeriodSummary);
     }
     // Period card
     const periodNum = typeof popupItem.id === 'number' ? popupItem.id : Number(popupItem.id);
-    return buildPeriodCardHTML(data, periodNum, {
+    return buildPeriodCardHTML(cardData, periodNum, {
       getLeavesForDate,
       getTeacherTotalPeriods
     });
-  }, [popupItem, data, teacherPeriodSummary, getLeavesForDate, getTeacherTotalPeriods]);
+  }, [popupItem, cardData, teacherPeriodSummary, getLeavesForDate, getTeacherTotalPeriods]);
 
   // Full document HTML for the iframe
   const iframeDocHtml = useMemo(() => {
@@ -639,6 +655,19 @@ export const ViewTimetablesView: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* Show / hide Friday time on the cards */}
+        {timings.hasDifferingPeriods && (
+          <label className="flex items-center gap-2.5 cursor-pointer select-none text-sm font-medium text-stone-700 dark:text-stone-300">
+            <input
+              type="checkbox"
+              checked={showFridayOnCards}
+              onChange={(e) => setShowFridayOnCards(e.target.checked)}
+              className="w-4 h-4 accent-emerald-700 cursor-pointer"
+            />
+            <span>Show {timings.fridayDayName} time on cards</span>
+          </label>
+        )}
       </div>
 
       {/* ---------------- B) SCHOOL TIMINGS CARD ---------------- */}
