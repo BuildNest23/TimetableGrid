@@ -75,7 +75,9 @@ export function getDaySchedule(data: TimetableData, dayIndex: number): DaySchedu
   const dayName = DAY_NAMES[dayIndex] || `Day ${dayIndex + 1}`;
 
   const ft = data.fridayTimings;
-  const isFridayTimings = !!(ft && ft.enabled && !ft.combined && ft.dayIndex === dayIndex);
+  const hasFriTimes = !!(ft && Array.isArray(ft.periodTimes) && ft.periodTimes.some(pt => pt && (pt.start || pt.end)));
+  const targetFriDayIndex = typeof ft?.dayIndex === 'number' ? ft.dayIndex : 4;
+  const isFridayTimings = hasFriTimes && (targetFriDayIndex === dayIndex);
 
   const timingsData = getPeriodTimes(data);
   const breakInfo = isFridayTimings ? timingsData.fridayBreak : timingsData.normalBreak;
@@ -105,7 +107,9 @@ export function getDaySchedule(data: TimetableData, dayIndex: number): DaySchedu
 
   // 2. Periods & Break slots
   data.periods.forEach((pNum, pi) => {
-    const pt = rawTimes?.[pi] || { start: '', end: '' };
+    const pt = (isFridayTimings && rawTimes?.[pi]?.start)
+      ? rawTimes[pi]
+      : (data.periodTimes?.[pi] || { start: '', end: '' });
     const sMins = parseTimeToMinutes(pt.start);
     const eMins = parseTimeToMinutes(pt.end);
 

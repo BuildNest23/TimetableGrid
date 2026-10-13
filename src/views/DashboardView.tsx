@@ -355,16 +355,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                   key={pNum}
                   type="button"
                   onClick={() => setSelectedPeriodIndex(pi)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex flex-col items-center border ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex flex-col items-center border relative ${
                     isSelected
                       ? 'bg-emerald-800 text-white border-emerald-900 shadow-xs'
                       : isLivePeriod
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 ring-2 ring-emerald-500/30'
                       : 'bg-stone-50 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700'
                   }`}
                   title={slot ? `${slot.startStr} - ${slot.endStr}` : `Period ${pNum}`}
                 >
-                  <span className="leading-tight">P{pNum}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="leading-tight">P{pNum}</span>
+                    {isLivePeriod && (
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Running right now" />
+                    )}
+                  </div>
                   {slot?.startStr && (
                     <span className={`text-[9px] font-normal leading-tight opacity-80 ${isSelected ? 'text-emerald-100' : 'text-stone-500 dark:text-stone-400'}`}>
                       {slot.startStr}
@@ -379,18 +384,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         {/* Class Allocations Section */}
         <div className="pt-2 border-t border-stone-100 dark:border-stone-800 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
-                <span>Classes in Period {effectivePeriodNum}</span>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0">
+              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 whitespace-nowrap">
+                Classes in Period {effectivePeriodNum}
+              </h3>
+              <div className="inline-flex items-center gap-2 whitespace-nowrap shrink-0">
                 {effectiveSlot?.startStr && (
                   <span className="text-xs font-semibold text-stone-500">
                     ({effectiveSlot.startStr} – {effectiveSlot.endStr})
                   </span>
                 )}
-              </h3>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-semibold">
-                {filteredAllocations.length} of {allocations.length}
-              </span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-semibold">
+                  {filteredAllocations.length} of {allocations.length}
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">

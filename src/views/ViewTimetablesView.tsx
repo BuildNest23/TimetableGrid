@@ -10,6 +10,8 @@ import {
 } from '../utils/printEngine';
 import { getPeriodTimes, PeriodTimeInfo } from '../utils/timings';
 import { triggerPrint } from '../utils/printUtils';
+import { useNow } from '../hooks/useNow';
+import { getLiveScheduleStatus } from '../utils/liveSchedule';
 import {
   Search,
   X,
@@ -43,6 +45,12 @@ export const ViewTimetablesView: React.FC = () => {
   const [showFridayOnCards, setShowFridayOnCards] = usePersistentState<boolean>('utShowFridayOnCards', true);
   const [popupItem, setPopupItem] = useState<PopupItem | null>(null);
   const [history, setHistory] = useState<PopupItem[]>([]);
+
+  // Live real-time clock to highlight running period
+  const now = useNow(10000);
+  const liveStatus = useMemo(() => {
+    return getLiveScheduleStatus(data, now);
+  }, [data, now]);
 
   // Shared timings result using getPeriodTimes helper
   const timings = useMemo(() => {
@@ -339,7 +347,9 @@ export const ViewTimetablesView: React.FC = () => {
       ...data,
       fridayTimings: {
         ...data.fridayTimings,
-        periodTimes: data.fridayTimings.periodTimes.map(() => ({ start: '', end: '' })),
+        periodTimes: Array.isArray(data.fridayTimings.periodTimes)
+          ? data.fridayTimings.periodTimes.map(() => ({ start: '', end: '' }))
+          : [],
         assemblyTime: { start: '', end: '' }
       }
     };
@@ -564,19 +574,41 @@ export const ViewTimetablesView: React.FC = () => {
       ? (item.friday || item.normal || '—')
       : (item.normal || '—');
 
+    const isRunningNow = liveStatus.type === 'period' && liveStatus.activePeriodIndex === item.periodIndex;
+
     return (
       <button
         key={item.period}
         type="button"
         onClick={() => openPeriodPopup(item.period)}
-        aria-label={`Open Period ${item.period}`}
-        className="w-full flex flex-col items-center justify-center p-3 sm:p-3.5 bg-stone-50 dark:bg-stone-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-stone-200 dark:border-stone-700/80 hover:border-emerald-500/60 rounded-2xl text-center shadow-2xs transition cursor-pointer active:scale-98 group"
+        aria-label={`Open Period ${item.period}${isRunningNow ? ' (Running now)' : ''}`}
+        className={`w-full flex flex-col items-center justify-center p-3 sm:p-3.5 rounded-2xl text-center shadow-2xs transition cursor-pointer active:scale-98 group relative ${
+          isRunningNow
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-500 ring-2 ring-emerald-500/20 shadow-emerald-500/10'
+            : 'bg-stone-50 dark:bg-stone-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-stone-200 dark:border-stone-700/80 hover:border-emerald-500/60'
+        }`}
       >
-        <span className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition">
-          Period {item.period}
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap justify-center">
+          <span className={`text-xs sm:text-sm font-bold transition ${
+            isRunningNow
+              ? 'text-emerald-900 dark:text-emerald-200'
+              : 'text-stone-800 dark:text-stone-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400'
+          }`}>
+            Period {item.period}
+          </span>
+          {isRunningNow && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-700 text-white shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              NOW{liveStatus.remainingMinutes > 0 ? ` · ${liveStatus.remainingMinutes}m left` : ''}
+            </span>
+          )}
+        </div>
         <div className="mt-1 text-center">
-          <span className="text-xs font-medium text-stone-500 dark:text-stone-400 break-words">
+          <span className={`text-xs font-medium break-words ${
+            isRunningNow
+              ? 'text-emerald-700 dark:text-emerald-300 font-semibold'
+              : 'text-stone-500 dark:text-stone-400'
+          }`}>
             {timeDisplay}
           </span>
         </div>
