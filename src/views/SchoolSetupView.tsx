@@ -487,6 +487,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
       fridayTimings: {
         ...prev.fridayTimings,
         enabled: fridayEnabled,
+        combined: false,
         dayIndex: fridayDayIdx,
         breakAfter: fridayBreakAfter,
         breakLabel: fridayBreakLabel.trim(),

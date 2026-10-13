@@ -1008,33 +1008,9 @@ export const ViewTimetablesView: React.FC = () => {
             )}
 
             {/* POPUP FOOTER ACTIONS & NAV */}
-            <div className="px-5 py-3.5 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between gap-2 shrink-0 bg-white dark:bg-stone-900">
-              {/* Prev / Next items */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => prevItem && setPopupItem(prevItem)}
-                  disabled={!prevItem}
-                  className="p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
-                  title="Previous (Left Arrow)"
-                  aria-label="Previous item"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => nextItem && setPopupItem(nextItem)}
-                  disabled={!nextItem}
-                  className="p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
-                  title="Next (Right Arrow)"
-                  aria-label="Next item"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-
+            <div className="px-5 py-3.5 border-t border-stone-200 dark:border-stone-800 flex flex-col items-center gap-2.5 shrink-0 bg-white dark:bg-stone-900">
               {/* Action Buttons: Print, Image, Share */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={handlePrint}
@@ -1065,6 +1041,30 @@ export const ViewTimetablesView: React.FC = () => {
                   <span>Share</span>
                 </button>
               </div>
+              {/* Prev / Next items */}
+              <div className="flex items-center justify-center gap-6">
+                <button
+                  type="button"
+                  onClick={() => prevItem && setPopupItem(prevItem)}
+                  disabled={!prevItem}
+                  className="p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                  title="Previous (Left Arrow)"
+                  aria-label="Previous item"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nextItem && setPopupItem(nextItem)}
+                  disabled={!nextItem}
+                  className="p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                  title="Next (Right Arrow)"
+                  aria-label="Next item"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
