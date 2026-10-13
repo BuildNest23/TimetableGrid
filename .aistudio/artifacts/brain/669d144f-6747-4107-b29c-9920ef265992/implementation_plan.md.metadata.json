@@ -1,6 +1,6 @@
 {
-  "summary": "Detailed implementation plan for the new 'Print Studio' tab and 'Design 2 · Black & White Ruled' restyling with live multi-page preview, font-size slider, binary search page fitting, and ink-friendly printing.",
-  "updatedAt": "2026-10-13T06:18:16.542168867Z",
+  "summary": "Comprehensive implementation plan to transform the Dashboard with a real-time 'Right Now' live schedule card, an interactive period jumper, searchable compact class allocations with leave/substitute tracking, and a collapsible Teacher Weekly Workload section.",
+  "updatedAt": "2026-10-13T16:48:01.901500195Z",
   "requestFeedback": true,
   "userFacing": true
 }
