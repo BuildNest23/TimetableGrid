@@ -960,7 +960,7 @@ export const ViewTimetablesView: React.FC = () => {
                 className="w-full flex items-center justify-center overflow-hidden py-2 min-h-[300px]"
               >
                 <div
-                  className="bg-white rounded-lg shadow-md border border-stone-200 dark:border-stone-700 origin-top flex items-center justify-center overflow-hidden"
+                  className="bg-white rounded-lg shadow-md border border-stone-200 dark:border-stone-700 origin-top relative shrink-0 overflow-hidden"
                   style={{
                     width: `${794 * previewScale}px`,
                     height: `${1123 * previewScale}px`,
@@ -971,7 +971,7 @@ export const ViewTimetablesView: React.FC = () => {
                     ref={iframeRef}
                     title="Card Preview"
                     srcDoc={iframeDocHtml}
-                    className="border-0 pointer-events-none select-none origin-top-left"
+                    className="border-0 pointer-events-none select-none origin-top-left absolute top-0 left-0 max-w-none shrink-0"
                     style={{
                       width: '794px',
                       height: '1123px',
