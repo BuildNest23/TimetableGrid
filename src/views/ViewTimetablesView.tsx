@@ -5,12 +5,9 @@ import {
   buildTeacherCardHTML,
   buildPeriodCardHTML,
   buildCardDocumentHTML,
-  getPeriodTimes,
-  getFreeTeachersForPeriod,
-  hasDifferingFridayTimings,
-  TimingMode,
-  PeriodTimingItem
+  getFreeTeachersForPeriod
 } from '../utils/printEngine';
+import { getPeriodTimes, PeriodTimeInfo } from '../utils/timings';
 import { triggerPrint } from '../utils/printUtils';
 import {
   Search,
@@ -32,9 +29,6 @@ interface PopupItem {
   id: string | number;
 }
 
-// Session-level memory for timing mode choice
-let sessionTimingMode: TimingMode = 'both';
-
 export const ViewTimetablesView: React.FC = () => {
   const {
     data,
@@ -47,27 +41,30 @@ export const ViewTimetablesView: React.FC = () => {
   const [popupItem, setPopupItem] = useState<PopupItem | null>(null);
   const [history, setHistory] = useState<PopupItem[]>([]);
 
-  // Check if Friday timings differ from Normal
-  const showTimingSwitch = useMemo(() => {
-    return hasDifferingFridayTimings(data);
+  // Shared timings result using getPeriodTimes helper
+  const timings = useMemo(() => {
+    return getPeriodTimes(data);
   }, [data]);
 
-  // Timing switch: Normal | Friday | Both (session only, default Both when differing Friday timings exist)
-  const [timingMode, setTimingModeState] = useState<TimingMode>(() => {
-    if (hasDifferingFridayTimings(data)) {
-      return sessionTimingMode;
+  // Strip toggle: "Normal" | "Friday" (per-visit only, not stored)
+  // Only shown if Friday timings are enabled and at least one period differs (or break/assembly differs)
+  const showStripToggle = useMemo(() => {
+    return timings.fridayEnabled && (timings.hasDifferingPeriods || timings.hasAnyDifference);
+  }, [timings]);
+
+  // Default: on Friday (the day set in fridayTimings.dayIndex), strip opens on "Friday". On other days "Normal".
+  const [stripTimingMode, setStripTimingMode] = useState<'normal' | 'friday'>(() => {
+    const ft = data.fridayTimings;
+    if (ft && ft.enabled) {
+      const jsDay = new Date().getDay();
+      const todayIndex = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon ... 4=Fri
+      const targetDayIndex = typeof ft.dayIndex === 'number' ? ft.dayIndex : 4;
+      if (todayIndex === targetDayIndex) {
+        return 'friday';
+      }
     }
     return 'normal';
   });
-
-  const handleSetTimingMode = useCallback((mode: TimingMode) => {
-    sessionTimingMode = mode;
-    setTimingModeState(mode);
-  }, []);
-
-  const timingsResult = useMemo(() => {
-    return getPeriodTimes(data, timingMode);
-  }, [data, timingMode]);
 
   // Action loading states
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
@@ -157,61 +154,30 @@ export const ViewTimetablesView: React.FC = () => {
     return result;
   }, [data.classes, filteredClasses]);
 
-  // Break and Period groupings for School Timings grid
+  // Break and Period groupings for School Timings strip grid
+  // Affects ONLY the timings strip on the View page. Does NOT affect cards.
   const timingsLayout = useMemo(() => {
-    const ft = data.fridayTimings;
-    const isFriday = timingMode === 'friday';
-    const isBoth = timingMode === 'both';
+    const isFriday = stripTimingMode === 'friday';
+    const breakInfo = isFriday ? timings.fridayBreak : timings.normalBreak;
+    const breakAfter = breakInfo.breakAfter;
 
-    let breakAfter = data.breakAfter;
-    let breakLabel = 'Break';
-    let breakTime = '';
-
-    const nbStart = data.periodTimes?.[data.breakAfter - 1]?.end;
-    const nbEnd = data.periodTimes?.[data.breakAfter]?.start;
-    const normalBreakTime = (nbStart || nbEnd) ? `${nbStart || '—'} - ${nbEnd || '—'}` : '';
-
-    if (isFriday) {
-      if (ft && ft.breakAfter && ft.breakAfter > 0) {
-        breakAfter = ft.breakAfter;
-      }
-      breakLabel = ft?.breakLabel || 'Break';
-      const fbStart = ft?.periodTimes?.[breakAfter - 1]?.end;
-      const fbEnd = ft?.periodTimes?.[breakAfter]?.start;
-      breakTime = (fbStart || fbEnd) ? `${fbStart || '—'} - ${fbEnd || '—'}` : normalBreakTime;
-    } else if (isBoth) {
-      breakAfter = data.breakAfter;
-      breakLabel = 'Break';
-      const fbStart = ft?.periodTimes?.[data.breakAfter - 1]?.end;
-      const fbEnd = ft?.periodTimes?.[data.breakAfter]?.start;
-      const fridayBreakTime = (fbStart || fbEnd) ? `${fbStart || '—'} - ${fbEnd || '—'}` : '';
-      if (normalBreakTime && fridayBreakTime && normalBreakTime !== fridayBreakTime) {
-        breakTime = `${normalBreakTime} · ${timingsResult.dayShort} ${fridayBreakTime}`;
-      } else {
-        breakTime = normalBreakTime;
-      }
-    } else {
-      breakAfter = data.breakAfter;
-      breakLabel = 'Break';
-      breakTime = normalBreakTime;
-    }
-
-    // A break is valid if breakAfter is within 1 and periods.length - 1
     const bIdx = data.periods.indexOf(breakAfter);
     const hasBreak = breakAfter > 0 && bIdx >= 0 && bIdx < data.periods.length - 1;
 
-    let group1: PeriodTimingItem[] = [];
-    let group2: PeriodTimingItem[] = [];
+    let group1: PeriodTimeInfo[] = [];
+    let group2: PeriodTimeInfo[] = [];
 
     if (hasBreak) {
-      group1 = timingsResult.periods.slice(0, bIdx + 1);
-      group2 = timingsResult.periods.slice(bIdx + 1);
+      group1 = timings.periods.slice(0, bIdx + 1);
+      group2 = timings.periods.slice(bIdx + 1);
     } else {
-      group1 = timingsResult.periods;
+      group1 = timings.periods;
       group2 = [];
     }
 
-    const breakText = breakTime ? `${breakLabel.toUpperCase()} · ${breakTime}` : breakLabel.toUpperCase();
+    const breakText = breakInfo.time
+      ? `${breakInfo.label.toUpperCase()} · ${breakInfo.time}`
+      : breakInfo.label.toUpperCase();
 
     return {
       hasBreak,
@@ -219,7 +185,7 @@ export const ViewTimetablesView: React.FC = () => {
       group1,
       group2
     };
-  }, [data, timingMode, timingsResult]);
+  }, [data.periods, stripTimingMode, timings]);
 
   // Open modal from card tile
   const openClassPopup = (className: string) => {
@@ -254,7 +220,7 @@ export const ViewTimetablesView: React.FC = () => {
     setPopupItem({ type: 'teacher', id: t });
   };
 
-  // Navigate to class chip from teacher/period popup
+  // Navigate to class chip from teacher popup
   const navigateToClass = (cName: string) => {
     if (popupItem) {
       setHistory(prev => [...prev, popupItem]);
@@ -262,134 +228,123 @@ export const ViewTimetablesView: React.FC = () => {
     setPopupItem({ type: 'class', id: cName });
   };
 
-  // Navigate to period chip
-  const navigateToPeriod = (pNum: number) => {
-    if (popupItem) {
-      setHistory(prev => [...prev, popupItem]);
-    }
-    setPopupItem({ type: 'period', id: pNum });
-  };
-
-  // Back button in popup
+  // Back button for chip navigation
   const handleBack = () => {
     if (history.length === 0) return;
-    const prev = history[history.length - 1];
-    setHistory(h => h.slice(0, -1));
-    setPopupItem(prev);
+    const nextHistory = [...history];
+    const prevItem = nextHistory.pop()!;
+    setHistory(nextHistory);
+    setPopupItem(prevItem);
   };
 
-  // Current item list navigation for popup chevrons
-  const currentList = useMemo(() => {
-    if (!popupItem) return [];
+  // Current item index & sibling navigation
+  const { currentIndex, prevItem, nextItem } = useMemo(() => {
+    if (!popupItem) return { currentIndex: -1, prevItem: null, nextItem: null };
+
     if (popupItem.type === 'class') {
-      return filteredClasses.map(c => c[0]);
+      const idx = filteredClasses.findIndex(c => c[0] === popupItem.id);
+      if (idx === -1) return { currentIndex: -1, prevItem: null, nextItem: null };
+      const prev = idx > 0 ? filteredClasses[idx - 1][0] : filteredClasses[filteredClasses.length - 1][0];
+      const next = idx < filteredClasses.length - 1 ? filteredClasses[idx + 1][0] : filteredClasses[0][0];
+      return {
+        currentIndex: idx,
+        prevItem: { type: 'class' as const, id: prev },
+        nextItem: { type: 'class' as const, id: next }
+      };
     }
+
     if (popupItem.type === 'teacher') {
-      return filteredTeachers;
+      const idx = filteredTeachers.findIndex(t => t === popupItem.id);
+      if (idx === -1) return { currentIndex: -1, prevItem: null, nextItem: null };
+      const prev = idx > 0 ? filteredTeachers[idx - 1] : filteredTeachers[filteredTeachers.length - 1];
+      const next = idx < filteredTeachers.length - 1 ? filteredTeachers[idx + 1] : filteredTeachers[0];
+      return {
+        currentIndex: idx,
+        prevItem: { type: 'teacher' as const, id: prev },
+        nextItem: { type: 'teacher' as const, id: next }
+      };
     }
-    return data.periods;
+
+    // Period navigation
+    const pNum = typeof popupItem.id === 'number' ? popupItem.id : Number(popupItem.id);
+    const idx = data.periods.indexOf(pNum);
+    if (idx === -1) return { currentIndex: -1, prevItem: null, nextItem: null };
+    const prev = idx > 0 ? data.periods[idx - 1] : data.periods[data.periods.length - 1];
+    const next = idx < data.periods.length - 1 ? data.periods[idx + 1] : data.periods[0];
+    return {
+      currentIndex: idx,
+      prevItem: { type: 'period' as const, id: prev },
+      nextItem: { type: 'period' as const, id: next }
+    };
   }, [popupItem, filteredClasses, filteredTeachers, data.periods]);
 
-  const currentIndex = useMemo(() => {
-    if (!popupItem) return -1;
-    if (popupItem.type === 'period') {
-      const pNum = typeof popupItem.id === 'number' ? popupItem.id : Number(popupItem.id);
-      return (currentList as number[]).indexOf(pNum);
-    }
-    return (currentList as string[]).indexOf(String(popupItem.id));
-  }, [popupItem, currentList]);
-
-  const canGoPrev = currentIndex > 0;
-  const canGoNext = currentIndex >= 0 && currentIndex < currentList.length - 1;
-
-  const handlePrev = useCallback(() => {
-    if (!canGoPrev || !popupItem) return;
-    const prevId = currentList[currentIndex - 1];
-    setPopupItem({ type: popupItem.type, id: prevId });
-  }, [canGoPrev, popupItem, currentList, currentIndex]);
-
-  const handleNext = useCallback(() => {
-    if (!canGoNext || !popupItem) return;
-    const nextId = currentList[currentIndex + 1];
-    setPopupItem({ type: popupItem.type, id: nextId });
-  }, [canGoNext, popupItem, currentList, currentIndex]);
-
-  // Keyboard navigation: Esc to close, Left/Right arrow for prev/next
+  // Keyboard navigation: Esc to close, Left/Right arrow keys for prev/next
   useEffect(() => {
     if (!popupItem) return;
 
-    const onKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         closePopup();
-      } else if (e.key === 'ArrowLeft') {
-        handlePrev();
-      } else if (e.key === 'ArrowRight') {
-        handleNext();
+      } else if (e.key === 'ArrowLeft' && prevItem) {
+        e.preventDefault();
+        setPopupItem(prevItem);
+      } else if (e.key === 'ArrowRight' && nextItem) {
+        e.preventDefault();
+        setPopupItem(nextItem);
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [popupItem, closePopup, handlePrev, handleNext]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [popupItem, prevItem, nextItem, closePopup]);
 
-  // Focus trap / restore
+  // Focus lock and restoration
   useEffect(() => {
     if (popupItem) {
-      setTimeout(() => closeButtonRef.current?.focus(), 60);
-    } else {
-      if (lastFocusedElementRef.current && typeof lastFocusedElementRef.current.focus === 'function') {
-        lastFocusedElementRef.current.focus();
-      }
+      closeButtonRef.current?.focus();
+    } else if (lastFocusedElementRef.current) {
+      lastFocusedElementRef.current.focus();
     }
   }, [popupItem]);
 
-  // Scaled A4 preview calculation via ResizeObserver
+  // Compute preview scale to fit container while maintaining A4 portrait aspect ratio (794 x 1123)
   useEffect(() => {
     if (!popupItem) return;
     const container = previewContainerRef.current;
     if (!container) return;
 
     const updateScale = () => {
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      if (width && height) {
-        // A4 page width = 794px, height = 1123px
-        const padX = width < 480 ? 12 : 24;
-        const padY = 16;
-        const availableW = Math.max(120, width - padX);
-        const availableH = Math.max(160, height - padY);
-        const scaleW = availableW / 794;
-        const scaleH = availableH / 1123;
-        setPreviewScale(Math.min(scaleW, scaleH, 1.0));
-      }
+      const containerWidth = container.clientWidth || 320;
+      const containerHeight = container.clientHeight || 450;
+      const scaleX = (containerWidth - 16) / 794;
+      const scaleY = (containerHeight - 16) / 1123;
+      const scale = Math.max(0.2, Math.min(scaleX, scaleY, 0.75));
+      setPreviewScale(scale);
     };
 
     updateScale();
-    const observer = new ResizeObserver(() => updateScale());
+    const observer = new ResizeObserver(updateScale);
     observer.observe(container);
     return () => observer.disconnect();
   }, [popupItem]);
 
-  // Active item's card HTML
+  // Active item's card HTML (always shows both times, independent of strip toggle)
   const cardHtml = useMemo(() => {
     if (!popupItem) return '';
     if (popupItem.type === 'class') {
-      return buildClassCardHTML(data, String(popupItem.id), { timingMode });
+      return buildClassCardHTML(data, String(popupItem.id));
     }
     if (popupItem.type === 'teacher') {
-      return buildTeacherCardHTML(data, String(popupItem.id), teacherPeriodSummary, { timingMode });
+      return buildTeacherCardHTML(data, String(popupItem.id), teacherPeriodSummary);
     }
     // Period card
     const periodNum = typeof popupItem.id === 'number' ? popupItem.id : Number(popupItem.id);
-    const targetDayIdx = timingMode === 'friday' && data.fridayTimings ? data.fridayTimings.dayIndex : undefined;
     return buildPeriodCardHTML(data, periodNum, {
-      timingMode,
       getLeavesForDate,
-      getTeacherTotalPeriods,
-      targetDayIdx
+      getTeacherTotalPeriods
     });
-  }, [popupItem, data, timingMode, teacherPeriodSummary, getLeavesForDate, getTeacherTotalPeriods]);
+  }, [popupItem, data, teacherPeriodSummary, getLeavesForDate, getTeacherTotalPeriods]);
 
   // Full document HTML for the iframe
   const iframeDocHtml = useMemo(() => {
@@ -446,57 +401,60 @@ export const ViewTimetablesView: React.FC = () => {
     // Period popup: show free teachers chips
     const periodNum = typeof popupItem.id === 'number' ? popupItem.id : Number(popupItem.id);
     const pIdx = Math.max(0, data.periods.indexOf(periodNum));
-    const targetDayIdx = timingMode === 'friday' && data.fridayTimings ? data.fridayTimings.dayIndex : undefined;
     const freeStaff = getFreeTeachersForPeriod(data, pIdx, {
       getLeavesForDate,
-      getTeacherTotalPeriods,
-      targetDayIdx
+      getTeacherTotalPeriods
     });
     return freeStaff.map(t => ({ label: t, type: 'teacher' as const, id: t }));
-  }, [popupItem, data, teacherPeriodSummary, timingMode, getLeavesForDate, getTeacherTotalPeriods]);
+  }, [popupItem, data, teacherPeriodSummary, getLeavesForDate, getTeacherTotalPeriods]);
 
   // Actions: Print, Save Image, Share
   const handlePrint = () => {
     if (!popupItem || !cardHtml) return;
     setIsPrinting(true);
     try {
-      triggerPrint(cardHtml, { orientation: 'portrait', margin: '4mm' });
-      showToast('Printing...');
+      const doc = buildCardDocumentHTML(cardHtml);
+      triggerPrint(doc);
     } catch (err) {
       console.error('Print error:', err);
-      showToast('Failed to print.');
+      showToast('Failed to start print.');
     } finally {
-      setIsPrinting(false);
+      setTimeout(() => setIsPrinting(false), 500);
     }
   };
 
   const generateImageBlob = async (): Promise<Blob | null> => {
-    const iframe = iframeRef.current;
-    if (!iframe) return null;
-    const doc = iframe.contentDocument;
-    if (!doc) return null;
+    if (!cardHtml) return null;
 
-    const serializer = new XMLSerializer();
-    let contentXml = serializer.serializeToString(doc.body);
-    contentXml = contentXml
-      .replace(/^<body[^>]*>/i, '<div xmlns="http://www.w3.org/1999/xhtml" style="width:794px; height:1123px; margin:0; padding:0; background:#fff; box-sizing:border-box;">')
-      .replace(/<\/body>$/i, '</div>');
+    // Render HTML card inside an SVG foreignObject for high-resolution PNG rasterization
+    const width = 794;
+    const height = 1123;
+    const scale = 2; // 2x for sharp print quality
 
-    const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="794" height="1123"><foreignObject width="100%" height="100%">${contentXml}</foreignObject></svg>`;
+    const svgXml = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <foreignObject width="100%" height="100%">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px; height:${height}px; background:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+            ${cardHtml}
+          </div>
+        </foreignObject>
+      </svg>
+    `;
 
-    return new Promise<Blob | null>((resolve) => {
-      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
+    const svgBlob = new Blob([svgXml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        canvas.width = 794 * 2;
-        canvas.height = 1123 * 2;
+        canvas.width = width * scale;
+        canvas.height = height * scale;
         const ctx = canvas.getContext('2d');
         if (ctx) {
+          ctx.scale(scale, scale);
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.scale(2, 2);
+          ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0);
         }
         URL.revokeObjectURL(url);
@@ -584,51 +542,37 @@ export const ViewTimetablesView: React.FC = () => {
     }
   };
 
-  // Render a period tile
-  const renderPeriodTile = (item: PeriodTimingItem) => (
-    <button
-      key={item.period}
-      type="button"
-      onClick={() => openPeriodPopup(item.period)}
-      aria-label={`Open Period ${item.period}`}
-      className="w-full flex flex-col items-center justify-center p-3 sm:p-3.5 bg-stone-50 dark:bg-stone-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-stone-200 dark:border-stone-700/80 hover:border-emerald-500/60 rounded-2xl text-center shadow-2xs transition cursor-pointer active:scale-98 group"
-    >
-      <span className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition">
-        Period {item.period}
-      </span>
-      {timingMode === 'both' ? (
-        <div className="mt-1 flex flex-col items-center leading-tight text-center">
-          {item.normalTime && (
-            <span className="text-xs font-medium text-stone-600 dark:text-stone-300 break-words">
-              {item.normalTime}
-            </span>
-          )}
-          {item.fridayTime && (
-            <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 break-words mt-0.5">
-              {timingsResult.dayShort} {item.fridayTime}
-            </span>
-          )}
-          {!item.normalTime && !item.fridayTime && (
-            <span className="text-xs text-stone-400 dark:text-stone-500">
-              —
-            </span>
-          )}
-        </div>
-      ) : (
+  // Render a period tile for the View page timings strip
+  const renderPeriodTile = (item: PeriodTimeInfo) => {
+    const timeDisplay = stripTimingMode === 'friday'
+      ? (item.friday || item.normal || '—')
+      : (item.normal || '—');
+
+    return (
+      <button
+        key={item.period}
+        type="button"
+        onClick={() => openPeriodPopup(item.period)}
+        aria-label={`Open Period ${item.period}`}
+        className="w-full flex flex-col items-center justify-center p-3 sm:p-3.5 bg-stone-50 dark:bg-stone-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-stone-200 dark:border-stone-700/80 hover:border-emerald-500/60 rounded-2xl text-center shadow-2xs transition cursor-pointer active:scale-98 group"
+      >
+        <span className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition">
+          Period {item.period}
+        </span>
         <div className="mt-1 text-center">
           <span className="text-xs font-medium text-stone-500 dark:text-stone-400 break-words">
-            {item.displayTime || '—'}
+            {timeDisplay}
           </span>
         </div>
-      )}
-    </button>
-  );
+      </button>
+    );
+  };
 
   // Render a group of period tiles in a 2-column grid, with odd tile centered at same column width
-  const renderPeriodGrid = (items: PeriodTimingItem[]) => {
+  const renderPeriodGrid = (items: PeriodTimeInfo[]) => {
     if (items.length === 0) return null;
 
-    const rows: PeriodTimingItem[][] = [];
+    const rows: PeriodTimeInfo[][] = [];
     for (let i = 0; i < items.length; i += 2) {
       rows.push(items.slice(i, i + 2));
     }
@@ -707,14 +651,15 @@ export const ViewTimetablesView: React.FC = () => {
             <h2 className="text-base font-bold text-stone-900 dark:text-stone-100">School Timings</h2>
           </div>
 
-          {/* 1) TIMING SWITCH: Normal | Friday | Both (Shown only if Friday timings differ from Normal) */}
-          {showTimingSwitch && (
+          {/* 2) VIEW PAGE TIMINGS STRIP TOGGLE: "Normal" | "Friday" */}
+          {/* Shown only if Friday timings are enabled and at least one period differs */}
+          {showStripToggle && (
             <div className="inline-flex items-center gap-1 p-0.5 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 self-start sm:self-auto">
               <button
                 type="button"
-                onClick={() => handleSetTimingMode('normal')}
+                onClick={() => setStripTimingMode('normal')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  timingMode === 'normal'
+                  stripTimingMode === 'normal'
                     ? 'bg-emerald-800 text-white shadow-xs'
                     : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
                 }`}
@@ -723,38 +668,27 @@ export const ViewTimetablesView: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => handleSetTimingMode('friday')}
+                onClick={() => setStripTimingMode('friday')}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  timingMode === 'friday'
+                  stripTimingMode === 'friday'
                     ? 'bg-emerald-800 text-white shadow-xs'
                     : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
                 }`}
               >
-                {timingsResult.dayName}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSetTimingMode('both')}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                  timingMode === 'both'
-                    ? 'bg-emerald-800 text-white shadow-xs'
-                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
-                }`}
-              >
-                Both
+                {timings.fridayDayName}
               </button>
             </div>
           )}
         </div>
 
         {/* Assembly tile if Friday mode and assemblyTime set (above first group, not tappable) */}
-        {timingMode === 'friday' && timingsResult.assemblyTimeText && (
+        {stripTimingMode === 'friday' && timings.assemblyTime && (
           <div className="w-full py-2.5 px-4 bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700/80 rounded-2xl text-center select-none shadow-2xs">
             <span className="text-xs font-bold text-stone-800 dark:text-stone-200">
               Assembly
             </span>
             <span className="text-xs font-medium text-stone-500 dark:text-stone-400 ml-1.5">
-              · {timingsResult.assemblyTimeText}
+              · {timings.assemblyTime}
             </span>
           </div>
         )}
@@ -790,16 +724,9 @@ export const ViewTimetablesView: React.FC = () => {
           </div>
 
           {/* Friday note if Friday mode and note is not empty */}
-          {timingMode === 'friday' && timingsResult.note && (
+          {stripTimingMode === 'friday' && timings.fridayNote && (
             <span className="text-stone-600 dark:text-stone-300 font-medium">
-              {timingsResult.note}
-            </span>
-          )}
-
-          {/* Differing break note if Both mode */}
-          {timingMode === 'both' && timingsResult.differingBreakNote && (
-            <span className="text-amber-700 dark:text-amber-300 font-medium">
-              * {timingsResult.differingBreakNote}
+              {timings.fridayNote}
             </span>
           )}
         </div>
@@ -819,40 +746,45 @@ export const ViewTimetablesView: React.FC = () => {
           </span>
         </div>
 
+        {/* Classes grouped by Section */}
         {filteredClasses.length === 0 ? (
-          <div className="py-10 text-center text-stone-400 dark:text-stone-500 text-sm">
+          <div className="text-center py-10 text-stone-400 dark:text-stone-500 text-sm">
             No classes found matching "{search}"
           </div>
         ) : (
-          <div className="space-y-5">
-            {sectionsGrouped.map((sec) => (
-              <div key={sec.name} className="space-y-3">
-                {/* Centered label with horizontal lines */}
-                <div className="flex items-center gap-3 my-2">
+          <div className="space-y-6">
+            {sectionsGrouped.map((section) => (
+              <div key={section.name} className="space-y-3">
+                {/* Centred label with lines on both sides */}
+                <div className="flex items-center gap-3">
                   <div className="flex-1 h-px bg-stone-200 dark:bg-stone-800" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400 px-1">
-                    {sec.isOther ? 'OTHER CLASSES' : `${sec.name.toUpperCase()} SECTION`}
+                  <span className="text-xs font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400 px-1">
+                    {section.name} {section.isOther ? '' : 'SECTION'}
                   </span>
                   <div className="flex-1 h-px bg-stone-200 dark:bg-stone-800" />
                 </div>
 
-                {/* Grid of class tiles with wrapping class and incharge names */}
+                {/* Class tiles (equal width grid, text wrapping) */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {sec.classes.map((c) => (
-                    <button
-                      key={c[0]}
-                      type="button"
-                      onClick={() => openClassPopup(c[0])}
-                      className="p-3 sm:p-3.5 text-left rounded-2xl bg-stone-50 dark:bg-stone-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-stone-200 dark:border-stone-700/80 hover:border-emerald-500/60 transition group cursor-pointer flex flex-col justify-between shadow-2xs active:scale-98 min-h-[72px]"
-                    >
-                      <div className="font-bold text-sm text-stone-900 dark:text-stone-100 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition break-words">
-                        {c[0]}
-                      </div>
-                      <div className="text-xs text-stone-500 dark:text-stone-400 mt-1 break-words">
-                        Incharge: {c[1] || '—'}
-                      </div>
-                    </button>
-                  ))}
+                  {section.classes.map((cls) => {
+                    const cName = cls[0];
+                    const incharge = cls[1];
+                    return (
+                      <button
+                        key={cName}
+                        type="button"
+                        onClick={() => openClassPopup(cName)}
+                        className="p-3.5 text-left rounded-2xl bg-stone-50 dark:bg-stone-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-stone-200 dark:border-stone-700/80 hover:border-emerald-500/60 transition group cursor-pointer flex flex-col justify-between shadow-2xs space-y-2 active:scale-98 min-h-[76px]"
+                      >
+                        <div className="font-bold text-sm text-stone-900 dark:text-stone-100 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition break-words">
+                          {cName}
+                        </div>
+                        <div className="text-xs text-stone-500 dark:text-stone-400 font-medium break-words">
+                          Incharge: {incharge || '—'}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -875,7 +807,7 @@ export const ViewTimetablesView: React.FC = () => {
         </div>
 
         {filteredTeachers.length === 0 ? (
-          <div className="py-10 text-center text-stone-400 dark:text-stone-500 text-sm">
+          <div className="text-center py-10 text-stone-400 dark:text-stone-500 text-sm">
             No teachers found matching "{search}"
           </div>
         ) : (
@@ -988,10 +920,10 @@ export const ViewTimetablesView: React.FC = () => {
                       (() => {
                         const pNum = typeof popupItem.id === 'number' ? popupItem.id : Number(popupItem.id);
                         const pIdx = Math.max(0, data.periods.indexOf(pNum));
-                        const curItem = timingsResult.periods[pIdx] || timingsResult.periods[0];
-                        let pTime = curItem.displayTime || '—';
-                        if (timingMode === 'both') {
-                          pTime = `${curItem.normalTime || '—'} / ${timingsResult.dayShort} ${curItem.fridayTime || '—'}`;
+                        const curItem = timings.periods[pIdx] || timings.periods[0];
+                        let pTime = curItem.normal || '—';
+                        if (curItem.friday !== null) {
+                          pTime = `${curItem.normal || '—'} / ${curItem.friday}`;
                         }
                         return `${pTime} · ${pIdx + 1} of ${data.periods.length} · ${relatedChips.length} free`;
                       })()
@@ -1012,190 +944,136 @@ export const ViewTimetablesView: React.FC = () => {
               </button>
             </div>
 
-            {/* TIMING SWITCH INSIDE POPUP: Normal | Friday | Both */}
-            {showTimingSwitch && (
-              <div className="px-5 py-2 bg-stone-50/90 dark:bg-stone-900/80 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between gap-2 shrink-0">
-                <span className="text-xs font-semibold text-stone-500 dark:text-stone-400">Timings:</span>
-                <div className="flex items-center gap-1 p-0.5 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700">
-                  <button
-                    type="button"
-                    onClick={() => handleSetTimingMode('normal')}
-                    className={`px-2.5 py-0.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      timingMode === 'normal'
-                        ? 'bg-emerald-800 text-white shadow-xs'
-                        : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
-                    }`}
-                  >
-                    Normal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetTimingMode('friday')}
-                    className={`px-2.5 py-0.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      timingMode === 'friday'
-                        ? 'bg-emerald-800 text-white shadow-xs'
-                        : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
-                    }`}
-                  >
-                    {timingsResult.dayName}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetTimingMode('both')}
-                    className={`px-2.5 py-0.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      timingMode === 'both'
-                        ? 'bg-emerald-800 text-white shadow-xs'
-                        : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
-                    }`}
-                  >
-                    Both
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* OPTIONAL AMBER NOTICE BAR (Teacher free in >= 4 periods) */}
+            {/* OPTIONAL AMBER NOTICE BAR (Teachers free in 4+ periods) */}
             {popupItem.type === 'teacher' && teacherFreePeriods >= 4 && (
-              <div className="px-5 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200 shrink-0">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  Free in {teacherFreePeriods} of {data.periods.length} periods
-                </span>
+              <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/60 flex items-center gap-2 text-xs font-semibold text-amber-800 dark:text-amber-300 shrink-0">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>Free in {teacherFreePeriods} of {data.periods.length} periods.</span>
               </div>
             )}
 
-            {/* HORIZONTAL CHIP BAR */}
-            {relatedChips.length > 0 && (
-              <div className="px-5 py-2.5 border-b border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/50 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400 shrink-0">
-                  {popupItem.type === 'class' ? 'Teachers:' : popupItem.type === 'teacher' ? 'Classes:' : 'Free Staff:'}
-                </span>
-                {relatedChips.map((chip, idx) => (
-                  <button
-                    key={`${chip.type}-${chip.id}-${idx}`}
-                    type="button"
-                    onClick={() => {
-                      if (chip.type === 'teacher') navigateToTeacher(chip.id);
-                      else navigateToClass(chip.id);
-                    }}
-                    className="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-500/60 transition cursor-pointer shadow-2xs"
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* PREVIEW AREA (Scaled A4 portrait page inside iframe) */}
-            <div
-              ref={previewContainerRef}
-              className="relative flex-1 bg-stone-100 dark:bg-stone-950 overflow-hidden flex items-center justify-center p-2 sm:p-4 min-h-[360px]"
-            >
-              {/* Circular Chevron Left Button */}
-              <button
-                type="button"
-                onClick={handlePrev}
-                disabled={!canGoPrev}
-                aria-label="Previous item"
-                className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-200 shadow-md flex items-center justify-center hover:bg-stone-50 dark:hover:bg-stone-800 transition active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-
-              {/* Scaled A4 iframe container */}
+            {/* SCROLLABLE BODY */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col items-center">
+              {/* Scaled A4 card preview container */}
               <div
-                style={{
-                  width: `${794 * previewScale}px`,
-                  height: `${1123 * previewScale}px`,
-                  transition: 'width 0.15s ease-out, height 0.15s ease-out'
-                }}
-                className="relative shadow-xl rounded-md overflow-hidden bg-white shrink-0"
+                ref={previewContainerRef}
+                className="w-full flex items-center justify-center overflow-hidden py-2 min-h-[300px]"
               >
-                <iframe
-                  ref={iframeRef}
-                  srcDoc={iframeDocHtml}
-                  title="Card Preview"
-                  tabIndex={-1}
-                  className="border-0 pointer-events-none select-none bg-white origin-top-left"
+                <div
+                  className="bg-white rounded-lg shadow-md border border-stone-200 dark:border-stone-700 origin-top flex items-center justify-center overflow-hidden"
                   style={{
-                    width: '794px',
-                    height: '1123px',
-                    transform: `scale(${previewScale})`,
-                    transformOrigin: '0 0'
+                    width: `${794 * previewScale}px`,
+                    height: `${1123 * previewScale}px`,
+                    transform: `scale(1)`
                   }}
-                />
-              </div>
-
-              {/* Circular Chevron Right Button */}
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={!canGoNext}
-                aria-label="Next item"
-                className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-200 shadow-md flex items-center justify-center hover:bg-stone-50 dark:hover:bg-stone-800 transition active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-
-              {/* Toast message inside dialog */}
-              {toast && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 px-4 py-2 bg-stone-900/90 text-white dark:bg-stone-100 dark:text-stone-900 rounded-full text-xs font-semibold shadow-lg pointer-events-none transition-all">
-                  {toast}
+                >
+                  <iframe
+                    ref={iframeRef}
+                    title="Card Preview"
+                    srcDoc={iframeDocHtml}
+                    className="border-0 pointer-events-none select-none origin-top-left"
+                    style={{
+                      width: '794px',
+                      height: '1123px',
+                      transform: `scale(${previewScale})`,
+                      transformOrigin: 'top left'
+                    }}
+                  />
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* POPUP FOOTER (Three round 48px icon buttons) */}
-            <div className="p-3.5 bg-white dark:bg-stone-900 border-t border-stone-200 dark:border-stone-800 flex items-center justify-center gap-5 shrink-0">
-              {/* Print Button */}
-              <button
-                type="button"
-                onClick={handlePrint}
-                disabled={isPrinting}
-                className="w-12 h-12 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-emerald-50 hover:border-emerald-500/60 dark:hover:bg-emerald-950/40 text-stone-800 dark:text-stone-100 shadow-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                title="Print"
-                aria-label="Print"
-              >
-                {isPrinting ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
-                ) : (
-                  <Printer className="w-5 h-5" />
-                )}
-              </button>
+            {/* RELATED CHIPS BAR */}
+            {relatedChips.length > 0 && (
+              <div className="px-4 sm:px-5 py-2.5 border-t border-stone-100 dark:border-stone-800 bg-stone-50/60 dark:bg-stone-900/60 shrink-0">
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                  <span className="text-[11px] font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider shrink-0 mr-1">
+                    {popupItem.type === 'class' ? 'Teachers:' : popupItem.type === 'teacher' ? 'Classes:' : 'Free staff:'}
+                  </span>
+                  {relatedChips.map(chip => (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      onClick={() => {
+                        if (chip.type === 'teacher') navigateToTeacher(String(chip.id));
+                        else navigateToClass(String(chip.id));
+                      }}
+                      className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:border-emerald-600 hover:text-emerald-700 dark:hover:text-emerald-400 transition shrink-0 cursor-pointer shadow-2xs"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-              {/* Save as Image Button */}
-              <button
-                type="button"
-                onClick={handleSaveImage}
-                disabled={isSavingImage}
-                className="w-12 h-12 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-emerald-50 hover:border-emerald-500/60 dark:hover:bg-emerald-950/40 text-stone-800 dark:text-stone-100 shadow-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                title="Save as image"
-                aria-label="Save as image"
-              >
-                {isSavingImage ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
-                ) : (
-                  <ImageIcon className="w-5 h-5" />
-                )}
-              </button>
+            {/* POPUP FOOTER ACTIONS & NAV */}
+            <div className="px-5 py-3.5 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between gap-2 shrink-0 bg-white dark:bg-stone-900">
+              {/* Prev / Next items */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => prevItem && setPopupItem(prevItem)}
+                  disabled={!prevItem}
+                  className="p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                  title="Previous (Left Arrow)"
+                  aria-label="Previous item"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => nextItem && setPopupItem(nextItem)}
+                  disabled={!nextItem}
+                  className="p-2 rounded-xl text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                  title="Next (Right Arrow)"
+                  aria-label="Next item"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
 
-              {/* Share Button */}
-              <button
-                type="button"
-                onClick={handleShare}
-                disabled={isSharing}
-                className="w-12 h-12 rounded-full border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-emerald-50 hover:border-emerald-500/60 dark:hover:bg-emerald-950/40 text-stone-800 dark:text-stone-100 shadow-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                title="Share"
-                aria-label="Share"
-              >
-                {isSharing ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
-                ) : (
-                  <Share2 className="w-5 h-5" />
-                )}
-              </button>
+              {/* Action Buttons: Print, Image, Share */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={isPrinting}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                >
+                  {isPrinting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                  <span>Print</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveImage}
+                  disabled={isSavingImage}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                  <span>Image</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  disabled={isSharing}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold transition cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isSharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+                  <span>Share</span>
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-60 px-4 py-2 bg-stone-900 text-white text-xs font-semibold rounded-full shadow-lg border border-stone-700 animate-in fade-in slide-in-from-bottom-2 duration-150">
+          {toast}
         </div>
       )}
     </div>

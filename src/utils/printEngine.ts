@@ -879,200 +879,20 @@ function buildSectionGroups(
 
 export type TimingMode = 'normal' | 'friday' | 'both';
 
-export interface PeriodTimingItem {
-  period: number;
-  periodIndex: number;
-  normalTime: string; // e.g. "8:00 - 8:40"
-  fridayTime: string; // e.g. "8:00 - 8:35"
-  displayTime: string; // Text according to mode
-  isBreakAfter: boolean;
-  breakLabel: string;
-  breakTimeText: string;
-}
+import {
+  getPeriodTimes,
+  hasDifferingFridayTimings,
+  PeriodTimeInfo,
+  BreakInfo,
+  TimingsData
+} from './timings';
 
-export interface TimingsModeResult {
-  mode: TimingMode;
-  dayName: string; // e.g. "Friday"
-  dayShort: string; // e.g. "Fri"
-  fridayEnabled: boolean;
-  fridayHasData: boolean;
-  assemblyTimeText: string;
-  note: string;
-  modeLabel: string; // "Normal timings", "Friday timings", "Normal and Friday timings"
-  differingBreakNote?: string;
-  periods: PeriodTimingItem[];
-}
+export { getPeriodTimes, hasDifferingFridayTimings };
+export type { PeriodTimeInfo, BreakInfo, TimingsData };
 
-/**
- * Returns true if Friday timings are enabled AND at least one Friday time,
- * assembly time, break position, or break label differs from the normal timings.
- */
-export function hasDifferingFridayTimings(data: TimetableData): boolean {
-  const ft = data.fridayTimings;
-  if (!ft || !ft.enabled || ft.combined) return false;
-
-  // 1. Break position differs
-  if (ft.breakAfter && ft.breakAfter > 0 && ft.breakAfter !== data.breakAfter) {
-    return true;
-  }
-  // 2. Break label differs
-  if (ft.breakLabel && ft.breakLabel.trim() && ft.breakLabel.trim().toLowerCase() !== 'break') {
-    return true;
-  }
-  // 3. Assembly time configured
-  if (ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end)) {
-    return true;
-  }
-  // 4. Any period time differs
-  const normalTimes = data.periodTimes || [];
-  const fridayTimes = ft.periodTimes || [];
-  for (let i = 0; i < data.periods.length; i++) {
-    const nt = normalTimes[i];
-    const fpt = fridayTimes[i];
-    const nStart = nt?.start?.trim() || '';
-    const nEnd = nt?.end?.trim() || '';
-    const fStart = fpt?.start?.trim() || '';
-    const fEnd = fpt?.end?.trim() || '';
-    if (fStart || fEnd) {
-      if (fStart !== nStart || fEnd !== nEnd) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-/**
- * Shared helper that returns period timing strings and break positions for Normal, Friday, or Both modes.
- * Reuses the logic from printHtml.ts / schoolTimingsHTML so all cards, strips, and popups agree.
- */
-export function getPeriodTimes(
-  data: TimetableData,
-  mode: TimingMode = 'normal'
-): TimingsModeResult {
-  const ft = data.fridayTimings;
-  const fridayEnabled = !!(ft && ft.enabled);
-  const dayName = ft ? (DAY_NAMES[ft.dayIndex] || data.days[ft.dayIndex] || 'Friday') : 'Friday';
-  const dayShort = dayName.slice(0, 3);
-
-  const fridayHasData = !!(
-    ft &&
-    ((ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end)) ||
-      (Array.isArray(ft.periodTimes) && ft.periodTimes.some(pt => pt && (pt.start || pt.end))))
-  );
-
-  const effectiveMode: TimingMode = fridayEnabled ? mode : 'normal';
-
-  const assemblyTimeText = (ft?.assemblyTime?.start || ft?.assemblyTime?.end)
-    ? `${ft.assemblyTime.start || '—'} - ${ft.assemblyTime.end || '—'}`
-    : '';
-
-  const isCombined = !!ft?.combined;
-  const normalBreakAfter = data.breakAfter;
-  const fridayBreakAfter = (ft && ft.breakAfter > 0) ? ft.breakAfter : normalBreakAfter;
-
-  const nbStart = data.periodTimes?.[normalBreakAfter - 1]?.end;
-  const nbEnd = data.periodTimes?.[normalBreakAfter]?.start;
-  const normalBreakTime = (nbStart || nbEnd) ? `${nbStart || '—'} - ${nbEnd || '—'}` : '—';
-
-  const fbStart = ft?.periodTimes?.[fridayBreakAfter - 1]?.end;
-  const fbEnd = ft?.periodTimes?.[fridayBreakAfter]?.start;
-  const fridayBreakTime = (fbStart || fbEnd) ? `${fbStart || '—'} - ${fbEnd || '—'}` : '—';
-
-  let modeLabel = 'Normal timings';
-  if (effectiveMode === 'friday') {
-    modeLabel = `${dayName} timings`;
-  } else if (effectiveMode === 'both') {
-    modeLabel = `Normal and ${dayName} timings`;
-  }
-
-  let differingBreakNote: string | undefined;
-  if (effectiveMode === 'both' && !isCombined && normalBreakAfter !== fridayBreakAfter) {
-    differingBreakNote = `${dayName} break after Period ${fridayBreakAfter}${fridayBreakTime !== '—' ? ` (${fridayBreakTime})` : ''}`;
-  }
-
-  const periods: PeriodTimingItem[] = data.periods.map((p, pi) => {
-    const pt = data.periodTimes?.[pi];
-    const normTime = (pt && (pt.start || pt.end)) ? `${pt.start || '—'} - ${pt.end || '—'}` : '';
-
-    const fpt = ft?.periodTimes?.[pi];
-    const friTime = (fpt && (fpt.start || fpt.end)) ? `${fpt.start || '—'} - ${fpt.end || '—'}` : '';
-
-    let displayTime = '';
-    if (effectiveMode === 'normal') {
-      displayTime = normTime;
-    } else if (effectiveMode === 'friday') {
-      displayTime = isCombined ? normTime : (friTime || normTime);
-    } else {
-      // both
-      if (isCombined) {
-        displayTime = normTime;
-      } else {
-        if (normTime && friTime) {
-          displayTime = `${normTime}\n${dayShort} ${friTime}`;
-        } else if (normTime) {
-          displayTime = normTime;
-        } else if (friTime) {
-          displayTime = `${dayShort} ${friTime}`;
-        }
-      }
-    }
-
-    let isBreakAfter = false;
-    let breakLabel = 'Break';
-    let breakTimeText = '';
-
-    if (effectiveMode === 'normal') {
-      isBreakAfter = normalBreakAfter === p;
-      breakLabel = 'Break';
-      breakTimeText = normalBreakTime;
-    } else if (effectiveMode === 'friday') {
-      isBreakAfter = isCombined ? normalBreakAfter === p : fridayBreakAfter === p;
-      breakLabel = ft?.breakLabel || 'Break';
-      breakTimeText = isCombined ? normalBreakTime : (fridayBreakTime !== '—' ? fridayBreakTime : normalBreakTime);
-    } else {
-      // both
-      if (normalBreakAfter === fridayBreakAfter || isCombined) {
-        isBreakAfter = normalBreakAfter === p;
-        breakLabel = 'Break';
-        if (!isCombined && normalBreakTime !== fridayBreakTime && fridayBreakTime !== '—') {
-          breakTimeText = `${normalBreakTime}\n${dayShort} ${fridayBreakTime}`;
-        } else {
-          breakTimeText = normalBreakTime;
-        }
-      } else {
-        isBreakAfter = normalBreakAfter === p;
-        breakLabel = 'Break';
-        breakTimeText = normalBreakTime;
-      }
-    }
-
-    return {
-      period: p,
-      periodIndex: pi,
-      normalTime: normTime,
-      fridayTime: friTime,
-      displayTime,
-      isBreakAfter,
-      breakLabel,
-      breakTimeText
-    };
-  });
-
-  return {
-    mode: effectiveMode,
-    dayName,
-    dayShort,
-    fridayEnabled,
-    fridayHasData,
-    assemblyTimeText,
-    note: ft?.note || '',
-    modeLabel,
-    differingBreakNote,
-    periods
-  };
-}
+// Backward compatibility aliases
+export type PeriodTimingItem = PeriodTimeInfo;
+export type TimingsModeResult = TimingsData;
 
 /**
  * Free Staff helper that calculates teachers free in a period using existing Free Staff logic.
@@ -1145,11 +965,10 @@ export function buildClassCardHTML(
   opts: { fontPt?: number; timingMode?: TimingMode } = {}
 ): string {
   const fontPt = opts.fontPt || 10.5;
-  const timingMode = opts.timingMode || 'normal';
   const targetClass = data.classes.find(c => c[0] === className) || data.classes[0] || [className, '', '', [], [], []];
 
-  const timingsResult = getPeriodTimes(data, timingMode);
-  const hasTimes = timingsResult.periods.some(p => p.normalTime || p.fridayTime || p.displayTime);
+  const timings = getPeriodTimes(data);
+  const hasTimes = timings.periods.some(p => p.normal || p.friday);
 
   const rowBorder = `border:0.75pt solid #000;`;
   const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
@@ -1162,12 +981,7 @@ export function buildClassCardHTML(
     : '';
 
   const inchargePart = targetClass[1] ? `Incharge: ${targetClass[1]}` : '';
-  const timingNoteParts = [
-    timingsResult.modeLabel,
-    timingMode === 'friday' && timingsResult.assemblyTimeText ? `Assembly: ${timingsResult.assemblyTimeText}` : ''
-  ].filter(Boolean);
-
-  const metaLine = [inchargePart, data.academicYear, ...timingNoteParts].filter(Boolean).join(' · ');
+  const metaLine = [inchargePart, data.academicYear, timings.cardSubtitle].filter(Boolean).join(' · ');
 
   const titleBlockHtml = `
     <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
@@ -1183,9 +997,9 @@ export function buildClassCardHTML(
     </div>
   `;
 
-  // Total rows for height calculation
-  const breakRowCount = timingsResult.periods.filter(p => p.isBreakAfter).length;
-  const totalRows = data.periods.length + breakRowCount;
+  // Total rows for height calculation: periods + break row (if break configured)
+  const hasBreak = timings.normalBreak.breakAfter > 0 && timings.normalBreak.breakAfter < data.periods.length;
+  const totalRows = data.periods.length + (hasBreak ? 1 : 0);
 
   // Table header
   const tableHeaderHtml = hasTimes ? `
@@ -1206,7 +1020,7 @@ export function buildClassCardHTML(
   const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
 
   let rowsHtml = '';
-  timingsResult.periods.forEach((item) => {
+  timings.periods.forEach((item) => {
     const p = item.period;
     const pi = item.periodIndex;
 
@@ -1224,17 +1038,17 @@ export function buildClassCardHTML(
 
     let timeCellHtml = '';
     if (hasTimes) {
-      if (timingMode === 'both') {
+      if (item.friday !== null) {
         timeCellHtml = `
           <td style="${timeStyle}">
-            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normalTime || '—')}</div>
-            <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; color:#333; margin-top:2px; font-weight:600;">${esc(timingsResult.dayShort)} ${esc(item.fridayTime || '—')}</div>
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normal || '—')}</div>
+            <div style="line-height:1.2; font-size:${(fontPt * 0.80).toFixed(1)}pt; color:#555555; margin-top:2px; font-weight:400;">${esc(item.friday)}</div>
           </td>
         `;
       } else {
         timeCellHtml = `
           <td style="${timeStyle}">
-            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.displayTime || '—')}</div>
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normal || '—')}</div>
           </td>
         `;
       }
@@ -1248,27 +1062,27 @@ export function buildClassCardHTML(
       </tr>
     `;
 
-    if (item.isBreakAfter) {
+    if (hasBreak && p === timings.normalBreak.breakAfter) {
       let breakTimeCell = '';
       if (hasTimes) {
-        if (timingMode === 'both' && item.breakTimeText.includes('\n')) {
-          const [nb, fb] = item.breakTimeText.split('\n');
+        const breakDiffers = timings.fridayEnabled && timings.fridayBreak.time && timings.fridayBreak.time !== timings.normalBreak.time;
+        if (breakDiffers) {
           breakTimeCell = `
-            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">
-              <div style="line-height:1.2;">${esc(nb)}</div>
-              <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; margin-top:2px;">${esc(fb)}</div>
+            <td style="${timeStyle} background:${HATCHED_BG};">
+              <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:700;">${esc(timings.normalBreak.time || '—')}</div>
+              <div style="line-height:1.2; font-size:${(fontPt * 0.80).toFixed(1)}pt; color:#555555; margin-top:2px; font-weight:400;">${esc(timings.fridayBreak.time)}</div>
             </td>
           `;
         } else {
           breakTimeCell = `
-            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">${esc(item.breakTimeText)}</td>
+            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">${esc(timings.normalBreak.time || '—')}</td>
           `;
         }
       }
 
       rowsHtml += `
         <tr style="background:#fff; height:calc(100% / ${totalRows});">
-          <td style="${fStyle} background:${HATCHED_BG};">${esc(item.breakLabel)}</td>
+          <td style="${fStyle} background:${HATCHED_BG};">${esc(timings.normalBreak.label)}</td>
           ${breakTimeCell}
           <td style="${cStyle} background:${HATCHED_BG};"></td>
         </tr>
@@ -1276,8 +1090,8 @@ export function buildClassCardHTML(
     }
   });
 
-  const differingNoteHtml = timingsResult.differingBreakNote
-    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; font-style:italic;">* ${esc(timingsResult.differingBreakNote)}</div>`
+  const differingNoteHtml = timings.differingBreakNote
+    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.80).toFixed(1)}pt; color:#555555; font-style:normal;">${esc(timings.differingBreakNote)}</div>`
     : '';
 
   return `
@@ -1307,11 +1121,10 @@ export function buildTeacherCardHTML(
   opts: { fontPt?: number; timingMode?: TimingMode } = {}
 ): string {
   const fontPt = opts.fontPt || 10.5;
-  const timingMode = opts.timingMode || 'normal';
   const currentTeacher = teacherName || data.teachers[0] || '';
 
-  const timingsResult = getPeriodTimes(data, timingMode);
-  const hasTimes = timingsResult.periods.some(p => p.normalTime || p.fridayTime || p.displayTime);
+  const timings = getPeriodTimes(data);
+  const hasTimes = timings.periods.some(p => p.normal || p.friday);
 
   const rowBorder = `border:0.75pt solid #000;`;
   const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
@@ -1333,12 +1146,7 @@ export function buildTeacherCardHTML(
     currentTeacher
   ].filter(Boolean);
 
-  const timingNoteParts = [
-    timingsResult.modeLabel,
-    timingMode === 'friday' && timingsResult.assemblyTimeText ? `Assembly: ${timingsResult.assemblyTimeText}` : ''
-  ].filter(Boolean);
-
-  const timingNoteLine = timingNoteParts.join(' · ');
+  const timingNoteLine = timings.cardSubtitle;
 
   const titleBlockHtml = `
     <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
@@ -1354,9 +1162,9 @@ export function buildTeacherCardHTML(
     </div>
   `;
 
-  // Total rows for height calculation
-  const breakRowCount = timingsResult.periods.filter(p => p.isBreakAfter).length;
-  const totalRows = data.periods.length + breakRowCount;
+  // Total rows for height calculation: periods + break row (if break configured)
+  const hasBreak = timings.normalBreak.breakAfter > 0 && timings.normalBreak.breakAfter < data.periods.length;
+  const totalRows = data.periods.length + (hasBreak ? 1 : 0);
 
   // Table header
   const tableHeaderHtml = hasTimes ? `
@@ -1377,7 +1185,7 @@ export function buildTeacherCardHTML(
   const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
 
   let rowsHtml = '';
-  timingsResult.periods.forEach((item) => {
+  timings.periods.forEach((item) => {
     const p = item.period;
     const pi = item.periodIndex;
     const summary = teacherPeriodSummary(currentTeacher, pi);
@@ -1386,17 +1194,17 @@ export function buildTeacherCardHTML(
 
     let timeCellHtml = '';
     if (hasTimes) {
-      if (timingMode === 'both') {
+      if (item.friday !== null) {
         timeCellHtml = `
           <td style="${timeStyle}">
-            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normalTime || '—')}</div>
-            <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; color:#333; margin-top:2px; font-weight:600;">${esc(timingsResult.dayShort)} ${esc(item.fridayTime || '—')}</div>
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normal || '—')}</div>
+            <div style="line-height:1.2; font-size:${(fontPt * 0.80).toFixed(1)}pt; color:#555555; margin-top:2px; font-weight:400;">${esc(item.friday)}</div>
           </td>
         `;
       } else {
         timeCellHtml = `
           <td style="${timeStyle}">
-            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.displayTime || '—')}</div>
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normal || '—')}</div>
           </td>
         `;
       }
@@ -1410,27 +1218,27 @@ export function buildTeacherCardHTML(
       </tr>
     `;
 
-    if (item.isBreakAfter) {
+    if (hasBreak && p === timings.normalBreak.breakAfter) {
       let breakTimeCell = '';
       if (hasTimes) {
-        if (timingMode === 'both' && item.breakTimeText.includes('\n')) {
-          const [nb, fb] = item.breakTimeText.split('\n');
+        const breakDiffers = timings.fridayEnabled && timings.fridayBreak.time && timings.fridayBreak.time !== timings.normalBreak.time;
+        if (breakDiffers) {
           breakTimeCell = `
-            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">
-              <div style="line-height:1.2;">${esc(nb)}</div>
-              <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; margin-top:2px;">${esc(fb)}</div>
+            <td style="${timeStyle} background:${HATCHED_BG};">
+              <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:700;">${esc(timings.normalBreak.time || '—')}</div>
+              <div style="line-height:1.2; font-size:${(fontPt * 0.80).toFixed(1)}pt; color:#555555; margin-top:2px; font-weight:400;">${esc(timings.fridayBreak.time)}</div>
             </td>
           `;
         } else {
           breakTimeCell = `
-            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">${esc(item.breakTimeText)}</td>
+            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">${esc(timings.normalBreak.time || '—')}</td>
           `;
         }
       }
 
       rowsHtml += `
         <tr style="background:#fff; height:calc(100% / ${totalRows});">
-          <td style="${fStyle} background:${HATCHED_BG};">${esc(item.breakLabel)}</td>
+          <td style="${fStyle} background:${HATCHED_BG};">${esc(timings.normalBreak.label)}</td>
           ${breakTimeCell}
           <td style="${cStyle} background:${HATCHED_BG};"></td>
         </tr>
@@ -1438,8 +1246,8 @@ export function buildTeacherCardHTML(
     }
   });
 
-  const differingNoteHtml = timingsResult.differingBreakNote
-    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; font-style:italic;">* ${esc(timingsResult.differingBreakNote)}</div>`
+  const differingNoteHtml = timings.differingBreakNote
+    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.80).toFixed(1)}pt; color:#555555; font-style:normal;">${esc(timings.differingBreakNote)}</div>`
     : '';
 
   return `
@@ -1473,11 +1281,10 @@ export function buildPeriodCardHTML(
   } = {}
 ): string {
   const fontPt = opts.fontPt || 10;
-  const timingMode = opts.timingMode || 'normal';
   const periodIndex = Math.max(0, data.periods.indexOf(period));
 
-  const timingsResult = getPeriodTimes(data, timingMode);
-  const item = timingsResult.periods[periodIndex] || timingsResult.periods[0];
+  const timings = getPeriodTimes(data);
+  const item = timings.periods[periodIndex] || timings.periods[0];
 
   const rowBorder = `border:0.75pt solid #000;`;
   const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
@@ -1490,18 +1297,15 @@ export function buildPeriodCardHTML(
     : '';
 
   let timeLine = '';
-  if (timingMode === 'both') {
-    timeLine = `Normal: ${item.normalTime || '—'} · ${timingsResult.dayShort}: ${item.fridayTime || '—'}`;
-  } else if (timingMode === 'friday') {
-    timeLine = `Time: ${item.fridayTime || item.normalTime || '—'}`;
+  if (item.friday !== null) {
+    timeLine = `Time: ${item.normal || '—'} / ${item.friday}`;
   } else {
-    timeLine = `Time: ${item.normalTime || '—'}`;
+    timeLine = `Time: ${item.normal || '—'}`;
   }
 
   const timingNoteParts = [
     timeLine,
-    timingsResult.modeLabel,
-    timingMode === 'friday' && timingsResult.assemblyTimeText ? `Assembly: ${timingsResult.assemblyTimeText}` : '',
+    timings.cardSubtitle,
     data.academicYear
   ].filter(Boolean);
 
@@ -1598,8 +1402,8 @@ export function buildPeriodCardHTML(
     }
   });
 
-  const differingNoteHtml = timingsResult.differingBreakNote
-    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; font-style:italic;">* ${esc(timingsResult.differingBreakNote)}</div>`
+  const differingNoteHtml = timings.differingBreakNote
+    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.80).toFixed(1)}pt; color:#555555; font-style:normal;">${esc(timings.differingBreakNote)}</div>`
     : '';
 
   return `
