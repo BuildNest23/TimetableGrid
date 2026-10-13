@@ -627,6 +627,8 @@ export const PrintStudioView: React.FC = () => {
                       width: '100%',
                       borderCollapse: 'collapse',
                       tableLayout: 'fixed',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word',
                       background: '#fff',
                       border: '0.75pt solid #000',
                       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
