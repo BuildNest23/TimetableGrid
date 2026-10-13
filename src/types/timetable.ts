@@ -83,6 +83,9 @@ export interface TimetableData {
   hideEmptyTeachersInTT: boolean;
   printSize: 'xs' | 's' | 'm' | 'l' | 'xl';
   printOrientation: 'landscape' | 'portrait';
+  printFontPt?: number;
+  printTimes?: boolean;
+  printBreakCol?: boolean;
   stripSize: string;
   viewSize: 'xs' | 's' | 'm' | 'l' | 'xl';
   schoolLogo: string;
@@ -251,7 +254,8 @@ export type ActiveTab =
   | 'substitute'
   | 'freestaff'
   | 'roster'
-  | 'printing';
+  | 'printing'
+  | 'printstudio';
 export const EMPTY_TIMETABLE_DATA: TimetableData = {
   schoolName: "",
   academicYear: "",
@@ -293,6 +297,9 @@ export const EMPTY_TIMETABLE_DATA: TimetableData = {
   hideEmptyTeachersInTT: false,
   printSize: 'm',
   printOrientation: 'landscape',
+  printFontPt: 7.5,
+  printTimes: false,
+  printBreakCol: true,
   stripSize: 'm',
   viewSize: 'm',
   schoolLogo: "",

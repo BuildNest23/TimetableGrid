@@ -25,9 +25,41 @@ export function isSlot1ActiveOn(s: any, d: number): boolean {
   return !s.days?.includes(d);
 }
 
-function daysLabel(days: number[]): string {
+export function daysLabel(days: number[]): string {
   if (!Array.isArray(days) || !days.length) return '';
   return days.slice().sort((a, b) => a - b).map(d => (DAY_NAMES[d] || '').slice(0, 3)).join(', ');
+}
+
+/* ---------- Whole School cell lines (single source of truth) ---------- */
+export function wholeSchoolCellLines(
+  sub1: string,
+  t1: string,
+  s2: any
+): string[] {
+  if (!s2 || (!s2.subject && !s2.teacher)) {
+    if (!sub1 && !t1) return ['—'];
+    if (t1) return [`${sub1 || '—'} - ${t1}`];
+    return [sub1 || '—'];
+  }
+
+  if (s2.mode === 'same') {
+    const t = t1 || s2.teacher;
+    const dayStr = s2.days?.length ? ` (${daysLabel(s2.days)})` : '';
+    const subPart = `${sub1 || '—'}/${s2.subject || '—'}${dayStr}`;
+    return [t ? `${subPart} - ${t}` : subPart];
+  }
+
+  if (s2.mode === 'parallel') {
+    const line1 = t1 ? `${sub1 || '—'} - ${t1}` : (sub1 || '—');
+    const line2 = s2.teacher ? `${s2.subject || '—'} - ${s2.teacher}` : (s2.subject || '—');
+    return [line1, line2];
+  }
+
+  // rotation mode
+  const line1 = t1 ? `${sub1 || '—'} - ${t1}` : (sub1 || '—');
+  const dayStr = s2.days?.length ? ` (${daysLabel(s2.days)})` : '';
+  const line2 = `${s2.subject || '—'}${s2.teacher ? ' - ' + s2.teacher : ''}${dayStr}`;
+  return [line1, line2];
 }
 
 /* ---------- Cell text for a specific day ---------- */
@@ -61,21 +93,22 @@ export function cellTextForDay(c: ClassItem, pi: number, dayIdx: number): string
 /* ---------- Header (logo + school name + title) ---------- */
 export function printHeaderHTML(data: TimetableData, title: string): string {
   const logoHtml = data.schoolLogo
-    ? `<div style="flex:0 0 26mm; max-width:26mm; display:flex; align-items:center; justify-content:center;">
-         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:20mm; max-width:26mm; display:block;" />
+    ? `<div style="flex:0 0 24mm; max-width:24mm; display:flex; align-items:center; justify-content:center;">
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:18mm; max-width:24mm; display:block;" />
        </div>`
     : '';
   const spacerHtml = data.schoolLogo
-    ? `<div style="flex:0 0 26mm; max-width:26mm; visibility:hidden;"></div>`
+    ? `<div style="flex:0 0 24mm; max-width:24mm; visibility:hidden;"></div>`
     : '';
   const metaLine = [data.academicYear, data.printNote].filter(Boolean).join(' · ');
   return `
-    <div class="print-header" style="display:flex; align-items:center; gap:4mm; margin-bottom:4mm;">
+    <div class="print-header" style="display:flex; align-items:center; gap:3mm; margin-bottom:3mm;">
       ${logoHtml}
       <div style="flex:1; text-align:center; min-width:0;">
-        <h2 class="print-title" style="margin:0;">${esc(data.schoolName)}</h2>
-        <div class="print-sub">${esc(title)}</div>
-        ${metaLine ? `<div class="print-sub" style="font-size:9pt;">${esc(metaLine)}</div>` : ''}
+        <h2 class="print-title" style="font-family:Georgia, 'Times New Roman', serif; font-weight:700; margin:0; line-height:1.2; letter-spacing:0.02em;">${esc(data.schoolName)}</h2>
+        <div class="print-sub" style="text-transform:uppercase; font-variant:small-caps; letter-spacing:0.18em; font-weight:700; margin-top:1.5mm;">${esc(title)}</div>
+        ${metaLine ? `<div class="print-sub" style="font-size:8.5pt; color:#444; margin-top:1mm;">${esc(metaLine)}</div>` : ''}
+        <div style="margin-top:2mm; border-top:1px solid #000; border-bottom:1px solid #000; height:2px;"></div>
       </div>
       ${spacerHtml}
     </div>
@@ -88,11 +121,19 @@ export function wholeSchoolHTML(
   classes: ClassItem[] = data.classes,
   titleOverride?: string
 ): string {
+  const hasBreak = data.breakAfter && data.breakAfter > 0 && data.breakAfter < data.periods.length;
+  const breakTh = hasBreak ? `<th class="break-header" style="width:14px; min-width:14px; max-width:14px; padding:0;"></th>` : '';
+  const breakTd = hasBreak ? `<td class="break-cell" style="width:14px; min-width:14px; max-width:14px; padding:0;"></td>` : '';
+  const totalCols = 2 + data.periods.length + (hasBreak ? 1 : 0);
+
   const headRow = `
     <tr>
       <th style="width:10%">Class</th>
       <th style="width:10%">Incharge</th>
-      ${data.periods.map(p => `<th>Period ${p}</th>`).join('')}
+      ${data.periods.map(p => {
+        const extra = (hasBreak && data.breakAfter === p) ? breakTh : '';
+        return `<th>Period ${p}</th>${extra}`;
+      }).join('')}
     </tr>
   `;
 
@@ -100,7 +141,7 @@ export function wholeSchoolHTML(
   const bodyRows = classes.map((c) => {
     let sectionRow = '';
     if (c[2] && c[2] !== lastSection) {
-      sectionRow = `<tr class="sectionrow"><td colspan="${2 + data.periods.length}"><b>${esc(c[2])} Section</b></td></tr>`;
+      sectionRow = `<tr class="sectionrow"><td colspan="${totalCols}"><b>${esc(c[2])} SECTION</b></td></tr>`;
       lastSection = c[2];
     } else if (!c[2]) {
       lastSection = null;
@@ -110,23 +151,16 @@ export function wholeSchoolHTML(
       const s2 = c[5] ? c[5][pi] : null;
       const sub1 = c[3][pi] || '—';
       const t1 = c[4][pi];
-      if (s2 && (s2.subject || s2.teacher) && s2.mode === 'same') {
-        const t = t1 || s2.teacher;
-        const dayStr = s2.days?.length ? ` (${daysLabel(s2.days)})` : '';
-        const txt = `${sub1}/${s2.subject || '—'}${dayStr}${t ? ` - ${t}` : ''}`;
-        return `<td>${esc(txt)}</td>`;
+      const breakExtra = (hasBreak && data.breakAfter === data.periods[pi]) ? breakTd : '';
+      const lines = wholeSchoolCellLines(sub1, t1, s2);
+
+      if (lines.length === 1) {
+        return `<td><div style="line-height:1.2; text-align:center; font-weight:700;">${esc(lines[0])}</div></td>${breakExtra}`;
       }
-      if (s2 && (s2.subject || s2.teacher)) {
-        const line1 = t1 ? `${sub1} - ${t1}` : sub1;
-        const line2 = s2.mode === 'parallel'
-          ? `${s2.subject || '—'}${s2.teacher ? ' - ' + s2.teacher : ''}`
-          : `${s2.subject || '—'}${s2.teacher ? ' - ' + s2.teacher : ''} (${daysLabel(s2.days)})`;
-        return `<td>${esc(line1)}<br>${esc(line2)}</td>`;
-      }
-      return `<td>${esc(t1 ? `${sub1} - ${t1}` : sub1)}</td>`;
+      return `<td><div style="line-height:1.2; text-align:center; font-size:0.9em;"><div style="font-weight:700;">${esc(lines[0])}</div><div style="font-style:italic; color:#333; margin-top:1px;">${esc(lines[1])}</div></div></td>${breakExtra}`;
     }).join('');
 
-    return `${sectionRow}<tr><th>${esc(c[0])}</th><td>${esc(c[1] || '—')}</td>${cells}</tr>`;
+    return `${sectionRow}<tr><th style="font-family:Georgia, 'Times New Roman', serif; text-align:left;">${esc(c[0])}</th><td style="font-style:italic;">${esc(c[1] || '—')}</td>${cells}</tr>`;
   }).join('');
 
   return `
@@ -152,18 +186,37 @@ export function allTeachersHTML(
     ? data.teachers.filter(t => data.periods.some((_, pi) => teacherPeriodSummary(t, pi) !== 'Free'))
     : data.teachers;
 
+  const hasBreak = data.breakAfter && data.breakAfter > 0 && data.breakAfter < data.periods.length;
+  const breakTh = hasBreak ? `<th class="break-header" style="width:14px; min-width:14px; max-width:14px; padding:0;"></th>` : '';
+  const breakTd = hasBreak ? `<td class="break-cell" style="width:14px; min-width:14px; max-width:14px; padding:0;"></td>` : '';
+
   const headRow = `
     <tr>
-      <th style="width:13%">Teacher</th>
-      ${data.periods.map(p => `<th>Period ${p}</th>`).join('')}
+      <th style="width:14%">Teacher</th>
+      ${data.periods.map(p => {
+        const extra = (hasBreak && data.breakAfter === p) ? breakTh : '';
+        return `<th>Period ${p}</th>${extra}`;
+      }).join('')}
     </tr>
   `;
-  const rows = teacherList.map(t => `
-    <tr>
-      <th>${esc(t)}</th>
-      ${data.periods.map((_, pi) => `<td>${esc(teacherPeriodSummary(t, pi))}</td>`).join('')}
-    </tr>
-  `).join('');
+  const rows = teacherList.map(t => {
+    const cells = data.periods.map((_, pi) => {
+      const summary = teacherPeriodSummary(t, pi);
+      const isFree = summary === 'Free';
+      const cellContent = isFree
+        ? `<span style="color:#777;">—</span>`
+        : `<span style="font-weight:700;">${esc(summary)}</span>`;
+      const breakExtra = (hasBreak && data.breakAfter === data.periods[pi]) ? breakTd : '';
+      return `<td>${cellContent}</td>${breakExtra}`;
+    }).join('');
+
+    return `
+      <tr>
+        <th style="font-family:Georgia, 'Times New Roman', serif; text-align:left;">${esc(t)}</th>
+        ${cells}
+      </tr>
+    `;
+  }).join('');
 
   return `
     <div class="print-sheet flow-sheet wide-sheet">
@@ -185,9 +238,9 @@ export function classWiseHTML(data: TimetableData, c: ClassItem): string {
 
   const headRow = `
     <tr>
-      <th style="width:12%">Day</th>
+      <th style="width:14%">Day</th>
       ${data.periods.map((p, i) => {
-        const extra = (hasBreak && data.breakAfter === p) ? `<th class="break-header" style="width:5%"></th>` : '';
+        const extra = (hasBreak && data.breakAfter === p) ? `<th class="break-header" style="width:14px; min-width:14px; max-width:14px; padding:0;"></th>` : '';
         return `<th>Period ${p}</th>${extra}`;
       }).join('')}
     </tr>
@@ -198,11 +251,11 @@ export function classWiseHTML(data: TimetableData, c: ClassItem): string {
     data.periods.forEach((p, i) => {
       const line = cellTextForDay(c, i, dayIdx);
       cells += `<td>${esc(line)}</td>`;
-      if (hasBreak && data.breakAfter === p && dayIdx === 0) {
-        cells += `<td class="break-cell" rowspan="${data.days.length}"><span class="break-text">BREAK</span></td>`;
+      if (hasBreak && data.breakAfter === p) {
+        cells += `<td class="break-cell" style="width:14px; min-width:14px; max-width:14px; padding:0;"></td>`;
       }
     });
-    return `<tr><th>${esc(d)}</th>${cells}</tr>`;
+    return `<tr><th style="font-family:Georgia, 'Times New Roman', serif; text-align:left;">${esc(d)}</th>${cells}</tr>`;
   }).join('');
 
   const inchargePart = c[1] ? ` — Incharge: ${c[1]}` : '';
@@ -227,8 +280,8 @@ export function teacherHTML(
 ): string {
   const rows = data.periods.map((p, i) => `
     <tr>
-      <th style="width:30%">Period ${p}</th>
-      <td>${esc(teacherPeriodSummary(t, i))}</td>
+      <th style="width:25%; font-family:Georgia, 'Times New Roman', serif; text-align:left;">Period ${p}</th>
+      <td style="text-align:left; font-weight:700; padding-left:12px;">${esc(teacherPeriodSummary(t, i))}</td>
     </tr>
   `).join('');
 

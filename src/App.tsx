@@ -16,6 +16,7 @@ import { TeachersRosterView } from './views/TeachersRosterView';
 import { SchoolSetupView } from './views/SchoolSetupView';
 import { MasterDataView } from './views/MasterDataView';
 import { PrintingView } from './views/PrintingView';
+import { PrintStudioView } from './views/PrintStudioView';
 
 const TAB_TITLES: Record<ActiveTab, string> = {
   dashboard: 'Dashboard',
@@ -26,7 +27,8 @@ const TAB_TITLES: Record<ActiveTab, string> = {
   roster: 'Teachers Roster',
   settings: 'School Setup',
   master: 'Teachers, Classes & Subjects',
-  printing: 'Print & Export'
+  printing: 'Print & Export',
+  printstudio: 'Print Studio'
 };
 
 const AppContent: React.FC = () => {
@@ -108,6 +110,7 @@ const AppContent: React.FC = () => {
           {activeTab === 'settings' && <SchoolSetupView onNavigate={handleSelectTab} />}
           {activeTab === 'master' && <MasterDataView />}
           {activeTab === 'printing' && <PrintingView />}
+          {activeTab === 'printstudio' && <PrintStudioView />}
         </ErrorBoundary>
       </main>
 

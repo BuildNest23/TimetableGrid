@@ -13,10 +13,15 @@ import {
 } from '../utils/printHtml';
 import { PRINT_SIZES } from '../types/timetable';
 import {
-  Printer, FileSpreadsheet, Settings, Scissors, Users, Calendar, Download
+  Printer, FileSpreadsheet, Settings, Scissors, Users, Calendar, Download, Sparkles, ArrowRight
 } from 'lucide-react';
+import { ActiveTab } from '../types/timetable';
 
-export const PrintingView: React.FC = () => {
+interface PrintingViewProps {
+  onNavigate?: (tab: ActiveTab) => void;
+}
+
+export const PrintingView: React.FC<PrintingViewProps> = ({ onNavigate }) => {
   const {
     data, updateData, teacherPeriodSummary, getTeacherTotalPeriods, getLeavesForDate
   } = useTimetable();

@@ -16,7 +16,7 @@ export default defineConfig(() => {
         manifest: {
           id: './',
           name: 'TimetableGrid — Universal School Timetable',
-          short_name: 'TG',
+          short_name: 'TimetableGrid',
           description: 'A native Android-feeling timetable app with fast scheduling, conflict detection, smart substitution, and multi-format exports.',
           theme_color: '#1B4D3E',
           background_color: '#F8F9FA',
