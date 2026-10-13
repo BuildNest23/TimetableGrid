@@ -712,14 +712,14 @@ export const ViewTimetablesView: React.FC = () => {
           )}
         </div>
 
-        {/* Assembly tile if Friday mode and assemblyTime set (above first group, not tappable) */}
-        {stripTimingMode === 'friday' && timings.assemblyTime && (
+        {/* Assembly tile (Normal or Friday time, not tappable) */}
+        {(stripTimingMode === 'friday' ? timings.assemblyTime : timings.normalAssemblyTime) && (
           <div className="w-full py-2.5 px-4 bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700/80 rounded-2xl text-center select-none shadow-2xs">
             <span className="text-xs font-bold text-stone-800 dark:text-stone-200">
               Assembly
             </span>
             <span className="text-xs font-medium text-stone-500 dark:text-stone-400 ml-1.5">
-              · {timings.assemblyTime}
+              · {stripTimingMode === 'friday' ? timings.assemblyTime : timings.normalAssemblyTime}
             </span>
           </div>
         )}
