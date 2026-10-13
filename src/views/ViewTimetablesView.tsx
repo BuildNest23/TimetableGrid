@@ -655,19 +655,6 @@ export const ViewTimetablesView: React.FC = () => {
             </button>
           )}
         </div>
-
-        {/* Show / hide Friday time on the cards */}
-        {timings.hasDifferingPeriods && (
-          <label className="flex items-center gap-2.5 cursor-pointer select-none text-sm font-medium text-stone-700 dark:text-stone-300">
-            <input
-              type="checkbox"
-              checked={showFridayOnCards}
-              onChange={(e) => setShowFridayOnCards(e.target.checked)}
-              className="w-4 h-4 accent-emerald-700 cursor-pointer"
-            />
-            <span>Show {timings.fridayDayName} time on cards</span>
-          </label>
-        )}
       </div>
 
       {/* ---------------- B) SCHOOL TIMINGS CARD ---------------- */}
@@ -679,11 +666,13 @@ export const ViewTimetablesView: React.FC = () => {
             </div>
             <h2 className="text-base font-bold text-stone-900 dark:text-stone-100">School Timings</h2>
           </div>
+        </div>
 
+        <div className="flex items-center justify-between gap-3">
           {/* 2) VIEW PAGE TIMINGS STRIP TOGGLE: "Normal" | "Friday" */}
           {/* Shown only if Friday timings are enabled and at least one period differs */}
           {showStripToggle && (
-            <div className="inline-flex items-center gap-1 p-0.5 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 self-start sm:self-auto">
+            <div className="inline-flex items-center gap-1 p-0.5 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 ">
               <button
                 type="button"
                 onClick={() => setStripTimingMode('normal')}
@@ -707,6 +696,19 @@ export const ViewTimetablesView: React.FC = () => {
                 {timings.fridayDayName}
               </button>
             </div>
+          )}
+
+          {/* Show / hide Friday time on the cards */}
+          {timings.hasDifferingPeriods && (
+            <label className="ml-auto flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-stone-600 dark:text-stone-300">
+              <input
+                type="checkbox"
+                checked={showFridayOnCards}
+                onChange={(e) => setShowFridayOnCards(e.target.checked)}
+                className="w-4 h-4 accent-emerald-700 cursor-pointer"
+              />
+              <span>Show {timings.fridayDayName} on cards</span>
+            </label>
           )}
         </div>
 
