@@ -39,9 +39,9 @@ export interface TimingsData {
  */
 export function getPeriodTimes(data: TimetableData): TimingsData {
   const ft = data.fridayTimings;
-  // NOTE: 'combined' is a legacy flag that was never cleared by the setup screen,
-  // so it must not disable Friday timings. Only 'enabled' matters.
-  const fridayEnabled = !!(ft && ft.enabled);
+  // Friday times are used whenever Friday period times have been entered.
+  // (ft.enabled / ft.combined only control how School Timings are PRINTED.)
+  const fridayEnabled = !!(ft && Array.isArray(ft.periodTimes) && ft.periodTimes.some(pt => pt && (pt.start || pt.end)));
   const dayName = ft ? (DAY_NAMES[ft.dayIndex] || data.days[ft.dayIndex] || 'Friday') : 'Friday';
   const dayShort = dayName.slice(0, 3);
 
