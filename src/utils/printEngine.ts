@@ -1,8 +1,9 @@
 import { TimetableData, ClassItem, DAY_NAMES } from '../types/timetable';
 import { esc, wholeSchoolCellLines, cellTextForDay } from './printHtml';
+import { dateKey } from './dates';
 
 // Escapes text and allows a line break after every "/" so long names like Computer/Drawing wrap inside the cell.
-const escWrap = (s: unknown): string => esc(s).replace(/\//g, '/<wbr>');
+const escWrap = (s: unknown): string => esc(s).replace(/\//g, '/<wbr />');
 
 export type PrintStudioDocType =
   | 'whole'
@@ -876,6 +877,779 @@ function buildSectionGroups(
   return [];
 }
 
+export type TimingMode = 'normal' | 'friday' | 'both';
+
+export interface PeriodTimingItem {
+  period: number;
+  periodIndex: number;
+  normalTime: string; // e.g. "8:00 - 8:40"
+  fridayTime: string; // e.g. "8:00 - 8:35"
+  displayTime: string; // Text according to mode
+  isBreakAfter: boolean;
+  breakLabel: string;
+  breakTimeText: string;
+}
+
+export interface TimingsModeResult {
+  mode: TimingMode;
+  dayName: string; // e.g. "Friday"
+  dayShort: string; // e.g. "Fri"
+  fridayEnabled: boolean;
+  fridayHasData: boolean;
+  assemblyTimeText: string;
+  note: string;
+  modeLabel: string; // "Normal timings", "Friday timings", "Normal and Friday timings"
+  differingBreakNote?: string;
+  periods: PeriodTimingItem[];
+}
+
+/**
+ * Returns true if Friday timings are enabled AND at least one Friday time,
+ * assembly time, break position, or break label differs from the normal timings.
+ */
+export function hasDifferingFridayTimings(data: TimetableData): boolean {
+  const ft = data.fridayTimings;
+  if (!ft || !ft.enabled || ft.combined) return false;
+
+  // 1. Break position differs
+  if (ft.breakAfter && ft.breakAfter > 0 && ft.breakAfter !== data.breakAfter) {
+    return true;
+  }
+  // 2. Break label differs
+  if (ft.breakLabel && ft.breakLabel.trim() && ft.breakLabel.trim().toLowerCase() !== 'break') {
+    return true;
+  }
+  // 3. Assembly time configured
+  if (ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end)) {
+    return true;
+  }
+  // 4. Any period time differs
+  const normalTimes = data.periodTimes || [];
+  const fridayTimes = ft.periodTimes || [];
+  for (let i = 0; i < data.periods.length; i++) {
+    const nt = normalTimes[i];
+    const fpt = fridayTimes[i];
+    const nStart = nt?.start?.trim() || '';
+    const nEnd = nt?.end?.trim() || '';
+    const fStart = fpt?.start?.trim() || '';
+    const fEnd = fpt?.end?.trim() || '';
+    if (fStart || fEnd) {
+      if (fStart !== nStart || fEnd !== nEnd) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Shared helper that returns period timing strings and break positions for Normal, Friday, or Both modes.
+ * Reuses the logic from printHtml.ts / schoolTimingsHTML so all cards, strips, and popups agree.
+ */
+export function getPeriodTimes(
+  data: TimetableData,
+  mode: TimingMode = 'normal'
+): TimingsModeResult {
+  const ft = data.fridayTimings;
+  const fridayEnabled = !!(ft && ft.enabled);
+  const dayName = ft ? (DAY_NAMES[ft.dayIndex] || data.days[ft.dayIndex] || 'Friday') : 'Friday';
+  const dayShort = dayName.slice(0, 3);
+
+  const fridayHasData = !!(
+    ft &&
+    ((ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end)) ||
+      (Array.isArray(ft.periodTimes) && ft.periodTimes.some(pt => pt && (pt.start || pt.end))))
+  );
+
+  const effectiveMode: TimingMode = fridayEnabled ? mode : 'normal';
+
+  const assemblyTimeText = (ft?.assemblyTime?.start || ft?.assemblyTime?.end)
+    ? `${ft.assemblyTime.start || '—'} - ${ft.assemblyTime.end || '—'}`
+    : '';
+
+  const isCombined = !!ft?.combined;
+  const normalBreakAfter = data.breakAfter;
+  const fridayBreakAfter = (ft && ft.breakAfter > 0) ? ft.breakAfter : normalBreakAfter;
+
+  const nbStart = data.periodTimes?.[normalBreakAfter - 1]?.end;
+  const nbEnd = data.periodTimes?.[normalBreakAfter]?.start;
+  const normalBreakTime = (nbStart || nbEnd) ? `${nbStart || '—'} - ${nbEnd || '—'}` : '—';
+
+  const fbStart = ft?.periodTimes?.[fridayBreakAfter - 1]?.end;
+  const fbEnd = ft?.periodTimes?.[fridayBreakAfter]?.start;
+  const fridayBreakTime = (fbStart || fbEnd) ? `${fbStart || '—'} - ${fbEnd || '—'}` : '—';
+
+  let modeLabel = 'Normal timings';
+  if (effectiveMode === 'friday') {
+    modeLabel = `${dayName} timings`;
+  } else if (effectiveMode === 'both') {
+    modeLabel = `Normal and ${dayName} timings`;
+  }
+
+  let differingBreakNote: string | undefined;
+  if (effectiveMode === 'both' && !isCombined && normalBreakAfter !== fridayBreakAfter) {
+    differingBreakNote = `${dayName} break after Period ${fridayBreakAfter}${fridayBreakTime !== '—' ? ` (${fridayBreakTime})` : ''}`;
+  }
+
+  const periods: PeriodTimingItem[] = data.periods.map((p, pi) => {
+    const pt = data.periodTimes?.[pi];
+    const normTime = (pt && (pt.start || pt.end)) ? `${pt.start || '—'} - ${pt.end || '—'}` : '';
+
+    const fpt = ft?.periodTimes?.[pi];
+    const friTime = (fpt && (fpt.start || fpt.end)) ? `${fpt.start || '—'} - ${fpt.end || '—'}` : '';
+
+    let displayTime = '';
+    if (effectiveMode === 'normal') {
+      displayTime = normTime;
+    } else if (effectiveMode === 'friday') {
+      displayTime = isCombined ? normTime : (friTime || normTime);
+    } else {
+      // both
+      if (isCombined) {
+        displayTime = normTime;
+      } else {
+        if (normTime && friTime) {
+          displayTime = `${normTime}\n${dayShort} ${friTime}`;
+        } else if (normTime) {
+          displayTime = normTime;
+        } else if (friTime) {
+          displayTime = `${dayShort} ${friTime}`;
+        }
+      }
+    }
+
+    let isBreakAfter = false;
+    let breakLabel = 'Break';
+    let breakTimeText = '';
+
+    if (effectiveMode === 'normal') {
+      isBreakAfter = normalBreakAfter === p;
+      breakLabel = 'Break';
+      breakTimeText = normalBreakTime;
+    } else if (effectiveMode === 'friday') {
+      isBreakAfter = isCombined ? normalBreakAfter === p : fridayBreakAfter === p;
+      breakLabel = ft?.breakLabel || 'Break';
+      breakTimeText = isCombined ? normalBreakTime : (fridayBreakTime !== '—' ? fridayBreakTime : normalBreakTime);
+    } else {
+      // both
+      if (normalBreakAfter === fridayBreakAfter || isCombined) {
+        isBreakAfter = normalBreakAfter === p;
+        breakLabel = 'Break';
+        if (!isCombined && normalBreakTime !== fridayBreakTime && fridayBreakTime !== '—') {
+          breakTimeText = `${normalBreakTime}\n${dayShort} ${fridayBreakTime}`;
+        } else {
+          breakTimeText = normalBreakTime;
+        }
+      } else {
+        isBreakAfter = normalBreakAfter === p;
+        breakLabel = 'Break';
+        breakTimeText = normalBreakTime;
+      }
+    }
+
+    return {
+      period: p,
+      periodIndex: pi,
+      normalTime: normTime,
+      fridayTime: friTime,
+      displayTime,
+      isBreakAfter,
+      breakLabel,
+      breakTimeText
+    };
+  });
+
+  return {
+    mode: effectiveMode,
+    dayName,
+    dayShort,
+    fridayEnabled,
+    fridayHasData,
+    assemblyTimeText,
+    note: ft?.note || '',
+    modeLabel,
+    differingBreakNote,
+    periods
+  };
+}
+
+/**
+ * Free Staff helper that calculates teachers free in a period using existing Free Staff logic.
+ */
+export function getFreeTeachersForPeriod(
+  data: TimetableData,
+  periodIndex: number,
+  options: {
+    getLeavesForDate?: (d: string) => string[];
+    getTeacherTotalPeriods?: (t: string) => number;
+    targetDayIdx?: number;
+  } = {}
+): string[] {
+  const { getLeavesForDate, getTeacherTotalPeriods, targetDayIdx } = options;
+
+  let dayIdx = targetDayIdx;
+  let leavesSet = new Set<string>();
+
+  if (dayIdx === undefined) {
+    try {
+      const today = dateKey();
+      const [y, m, d] = today.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      const map: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+      dayIdx = map[dt.getDay()] ?? 0;
+      if (getLeavesForDate) {
+        leavesSet = new Set(getLeavesForDate(today));
+      }
+    } catch {
+      dayIdx = 0;
+    }
+  }
+
+  const effectiveDayIdx = (dayIdx !== undefined && dayIdx >= 0 && dayIdx < data.daysPerWeek) ? dayIdx : 0;
+
+  return data.teachers.filter(t => {
+    if (leavesSet.has(t)) return false;
+    if (!data.freeStaffIncludeNonTeaching && getTeacherTotalPeriods && getTeacherTotalPeriods(t) === 0) {
+      return false;
+    }
+
+    // Check if teacher has class in this period on effectiveDayIdx
+    const isBusy = data.classes.some(c => {
+      const t1 = c[4]?.[periodIndex];
+      const s2 = c[5]?.[periodIndex];
+      let s1Active = true;
+      if (s2 && s2.mode === 'rotation' && s2.days && s2.days.includes(effectiveDayIdx)) {
+        s1Active = false;
+      }
+      if (t1 === t && s1Active) return true;
+      if (s2 && s2.teacher === t) {
+        return s2.mode === 'parallel' || (s2.days && s2.days.includes(effectiveDayIdx));
+      }
+      return false;
+    });
+
+    return !isBusy;
+  });
+}
+
+/**
+ * Builds a single A4 portrait Class Card HTML page (same Design 2 look as Print Studio).
+ * Columns: Period | Time | Assignment (Time column hidden if no times set).
+ * Assignment text uses wholeSchoolCellLines (parallel, combined, rotation).
+ * Rows stretch evenly to fill page height.
+ */
+export function buildClassCardHTML(
+  data: TimetableData,
+  className: string,
+  opts: { fontPt?: number; timingMode?: TimingMode } = {}
+): string {
+  const fontPt = opts.fontPt || 10.5;
+  const timingMode = opts.timingMode || 'normal';
+  const targetClass = data.classes.find(c => c[0] === className) || data.classes[0] || [className, '', '', [], [], []];
+
+  const timingsResult = getPeriodTimes(data, timingMode);
+  const hasTimes = timingsResult.periods.some(p => p.normalTime || p.fridayTime || p.displayTime);
+
+  const rowBorder = `border:0.75pt solid #000;`;
+  const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
+
+  // Header Logo & Title
+  const logoHtml = data.schoolLogo
+    ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+       </div>`
+    : '';
+
+  const inchargePart = targetClass[1] ? `Incharge: ${targetClass[1]}` : '';
+  const timingNoteParts = [
+    timingsResult.modeLabel,
+    timingMode === 'friday' && timingsResult.assemblyTimeText ? `Assembly: ${timingsResult.assemblyTimeText}` : ''
+  ].filter(Boolean);
+
+  const metaLine = [inchargePart, data.academicYear, ...timingNoteParts].filter(Boolean).join(' · ');
+
+  const titleBlockHtml = `
+    <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+      ${logoHtml}
+      <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
+        ${esc(data.schoolName || 'School Timetable')}
+      </h1>
+      <div style="font-size:${(fontPt * 1.05).toFixed(1)}pt; font-weight:700; text-transform:uppercase; letter-spacing:0.18em; margin-top:3px; color:#000;">
+        ${esc(`Class ${targetClass[0]}`)}
+      </div>
+      ${metaLine ? `<div style="font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; margin-top:2px; font-weight:600;">${esc(metaLine)}</div>` : ''}
+      <div style="margin-top:6px; border-top:1px solid #000; border-bottom:1px solid #000; height:2px;"></div>
+    </div>
+  `;
+
+  // Total rows for height calculation
+  const breakRowCount = timingsResult.periods.filter(p => p.isBreakAfter).length;
+  const totalRows = data.periods.length + breakRowCount;
+
+  // Table header
+  const tableHeaderHtml = hasTimes ? `
+    <tr style="background:#fff;">
+      <th style="width:20%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME</th>
+      <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
+    </tr>
+  ` : `
+    <tr style="background:#fff;">
+      <th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
+    </tr>
+  `;
+
+  const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
+  const timeStyle = `text-align:center; padding:4px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+  const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
+
+  let rowsHtml = '';
+  timingsResult.periods.forEach((item) => {
+    const p = item.period;
+    const pi = item.periodIndex;
+
+    const sub1 = (targetClass[3] && targetClass[3][pi]) || '';
+    const t1 = (targetClass[4] && targetClass[4][pi]) || '';
+    const s2 = targetClass[5] ? targetClass[5][pi] : null;
+    const lines = wholeSchoolCellLines(sub1, t1, s2);
+
+    let innerAssignment = '';
+    if (lines.length === 1) {
+      innerAssignment = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${escWrap(lines[0])}</div>`;
+    } else {
+      innerAssignment = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;"><div>${escWrap(lines[0])}</div><div style="margin-top:2px;">${escWrap(lines[1])}</div></div>`;
+    }
+
+    let timeCellHtml = '';
+    if (hasTimes) {
+      if (timingMode === 'both') {
+        timeCellHtml = `
+          <td style="${timeStyle}">
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normalTime || '—')}</div>
+            <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; color:#333; margin-top:2px; font-weight:600;">${esc(timingsResult.dayShort)} ${esc(item.fridayTime || '—')}</div>
+          </td>
+        `;
+      } else {
+        timeCellHtml = `
+          <td style="${timeStyle}">
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.displayTime || '—')}</div>
+          </td>
+        `;
+      }
+    }
+
+    rowsHtml += `
+      <tr style="background:#fff; height:calc(100% / ${totalRows});">
+        <td style="${fStyle}">Period ${p}</td>
+        ${timeCellHtml}
+        <td style="${cStyle}">${innerAssignment}</td>
+      </tr>
+    `;
+
+    if (item.isBreakAfter) {
+      let breakTimeCell = '';
+      if (hasTimes) {
+        if (timingMode === 'both' && item.breakTimeText.includes('\n')) {
+          const [nb, fb] = item.breakTimeText.split('\n');
+          breakTimeCell = `
+            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">
+              <div style="line-height:1.2;">${esc(nb)}</div>
+              <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; margin-top:2px;">${esc(fb)}</div>
+            </td>
+          `;
+        } else {
+          breakTimeCell = `
+            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">${esc(item.breakTimeText)}</td>
+          `;
+        }
+      }
+
+      rowsHtml += `
+        <tr style="background:#fff; height:calc(100% / ${totalRows});">
+          <td style="${fStyle} background:${HATCHED_BG};">${esc(item.breakLabel)}</td>
+          ${breakTimeCell}
+          <td style="${cStyle} background:${HATCHED_BG};"></td>
+        </tr>
+      `;
+    }
+  });
+
+  const differingNoteHtml = timingsResult.differingBreakNote
+    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; font-style:italic;">* ${esc(timingsResult.differingBreakNote)}</div>`
+    : '';
+
+  return `
+    <div class="timetable-card-page" style="box-sizing:border-box; width:100%; height:100%; display:flex; flex-direction:column; padding:28px 24px; background:#fff; color:#000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; overflow:visible;">
+      ${titleBlockHtml}
+      <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
+        <table style="width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+          <thead>${tableHeaderHtml}</thead>
+          <tbody style="height:100%;">${rowsHtml}</tbody>
+        </table>
+        ${differingNoteHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Builds a single A4 portrait Teacher Card HTML page (used by View tab popup and Print Studio Teacher Wise).
+ * Columns: Period | Time | Assignment (Time column hidden if no times set).
+ * Assignment text uses teacherPeriodSummary.
+ * Rows stretch evenly to fill page height.
+ */
+export function buildTeacherCardHTML(
+  data: TimetableData,
+  teacherName: string,
+  teacherPeriodSummary: (t: string, pi: number) => string,
+  opts: { fontPt?: number; timingMode?: TimingMode } = {}
+): string {
+  const fontPt = opts.fontPt || 10.5;
+  const timingMode = opts.timingMode || 'normal';
+  const currentTeacher = teacherName || data.teachers[0] || '';
+
+  const timingsResult = getPeriodTimes(data, timingMode);
+  const hasTimes = timingsResult.periods.some(p => p.normalTime || p.fridayTime || p.displayTime);
+
+  const rowBorder = `border:0.75pt solid #000;`;
+  const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
+
+  // Header Logo & Title
+  const logoHtml = data.schoolLogo
+    ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+       </div>`
+    : '';
+
+  const info = data.teacherInfo[currentTeacher] || { qual: '', rank: '', desig: '' };
+  const inchargeClass = data.classes.find(c => c[1] === currentTeacher);
+  const parts = [
+    data.academicYear,
+    inchargeClass ? `Incharge of ${inchargeClass[0]}` : '',
+    info.rank,
+    info.qual,
+    currentTeacher
+  ].filter(Boolean);
+
+  const timingNoteParts = [
+    timingsResult.modeLabel,
+    timingMode === 'friday' && timingsResult.assemblyTimeText ? `Assembly: ${timingsResult.assemblyTimeText}` : ''
+  ].filter(Boolean);
+
+  const timingNoteLine = timingNoteParts.join(' · ');
+
+  const titleBlockHtml = `
+    <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+      ${logoHtml}
+      <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
+        ${esc(data.schoolName || 'School Timetable')}
+      </h1>
+      <div style="font-size:${(fontPt * 1.05).toFixed(1)}pt; font-weight:700; text-transform:uppercase; letter-spacing:0.18em; margin-top:3px; color:#000;">
+        ${esc(parts.join(' · '))}
+      </div>
+      ${timingNoteLine ? `<div style="font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; margin-top:2px; font-weight:600;">${esc(timingNoteLine)}</div>` : ''}
+      <div style="margin-top:6px; border-top:1px solid #000; border-bottom:1px solid #000; height:2px;"></div>
+    </div>
+  `;
+
+  // Total rows for height calculation
+  const breakRowCount = timingsResult.periods.filter(p => p.isBreakAfter).length;
+  const totalRows = data.periods.length + breakRowCount;
+
+  // Table header
+  const tableHeaderHtml = hasTimes ? `
+    <tr style="background:#fff;">
+      <th style="width:20%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME</th>
+      <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
+    </tr>
+  ` : `
+    <tr style="background:#fff;">
+      <th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
+    </tr>
+  `;
+
+  const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
+  const timeStyle = `text-align:center; padding:4px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
+  const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
+
+  let rowsHtml = '';
+  timingsResult.periods.forEach((item) => {
+    const p = item.period;
+    const pi = item.periodIndex;
+    const summary = teacherPeriodSummary(currentTeacher, pi);
+
+    const innerAssignment = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${escWrap(summary)}</div>`;
+
+    let timeCellHtml = '';
+    if (hasTimes) {
+      if (timingMode === 'both') {
+        timeCellHtml = `
+          <td style="${timeStyle}">
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.normalTime || '—')}</div>
+            <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; color:#333; margin-top:2px; font-weight:600;">${esc(timingsResult.dayShort)} ${esc(item.fridayTime || '—')}</div>
+          </td>
+        `;
+      } else {
+        timeCellHtml = `
+          <td style="${timeStyle}">
+            <div style="line-height:1.2; font-size:${fontPt}pt; color:#000; font-weight:600;">${esc(item.displayTime || '—')}</div>
+          </td>
+        `;
+      }
+    }
+
+    rowsHtml += `
+      <tr style="background:#fff; height:calc(100% / ${totalRows});">
+        <td style="${fStyle}">Period ${p}</td>
+        ${timeCellHtml}
+        <td style="${cStyle}">${innerAssignment}</td>
+      </tr>
+    `;
+
+    if (item.isBreakAfter) {
+      let breakTimeCell = '';
+      if (hasTimes) {
+        if (timingMode === 'both' && item.breakTimeText.includes('\n')) {
+          const [nb, fb] = item.breakTimeText.split('\n');
+          breakTimeCell = `
+            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">
+              <div style="line-height:1.2;">${esc(nb)}</div>
+              <div style="line-height:1.2; font-size:${(fontPt * 0.88).toFixed(1)}pt; margin-top:2px;">${esc(fb)}</div>
+            </td>
+          `;
+        } else {
+          breakTimeCell = `
+            <td style="${timeStyle} background:${HATCHED_BG}; font-weight:700;">${esc(item.breakTimeText)}</td>
+          `;
+        }
+      }
+
+      rowsHtml += `
+        <tr style="background:#fff; height:calc(100% / ${totalRows});">
+          <td style="${fStyle} background:${HATCHED_BG};">${esc(item.breakLabel)}</td>
+          ${breakTimeCell}
+          <td style="${cStyle} background:${HATCHED_BG};"></td>
+        </tr>
+      `;
+    }
+  });
+
+  const differingNoteHtml = timingsResult.differingBreakNote
+    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; font-style:italic;">* ${esc(timingsResult.differingBreakNote)}</div>`
+    : '';
+
+  return `
+    <div class="timetable-card-page" style="box-sizing:border-box; width:100%; height:100%; display:flex; flex-direction:column; padding:28px 24px; background:#fff; color:#000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; overflow:visible;">
+      ${titleBlockHtml}
+      <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
+        <table style="width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+          <thead>${tableHeaderHtml}</thead>
+          <tbody style="height:100%;">${rowsHtml}</tbody>
+        </table>
+        ${differingNoteHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Builds a single A4 portrait Period Card HTML page ("who teaches which class in this period").
+ * Grouped by section with centred bands ("HIGH SECTION") like Whole School print.
+ * Under table: boxed row "Free teachers" listing teachers who have no class in this period.
+ */
+export function buildPeriodCardHTML(
+  data: TimetableData,
+  period: number,
+  opts: {
+    fontPt?: number;
+    timingMode?: TimingMode;
+    getLeavesForDate?: (d: string) => string[];
+    getTeacherTotalPeriods?: (t: string) => number;
+    targetDayIdx?: number;
+  } = {}
+): string {
+  const fontPt = opts.fontPt || 10;
+  const timingMode = opts.timingMode || 'normal';
+  const periodIndex = Math.max(0, data.periods.indexOf(period));
+
+  const timingsResult = getPeriodTimes(data, timingMode);
+  const item = timingsResult.periods[periodIndex] || timingsResult.periods[0];
+
+  const rowBorder = `border:0.75pt solid #000;`;
+  const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
+
+  // Header Logo & Title
+  const logoHtml = data.schoolLogo
+    ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+       </div>`
+    : '';
+
+  let timeLine = '';
+  if (timingMode === 'both') {
+    timeLine = `Normal: ${item.normalTime || '—'} · ${timingsResult.dayShort}: ${item.fridayTime || '—'}`;
+  } else if (timingMode === 'friday') {
+    timeLine = `Time: ${item.fridayTime || item.normalTime || '—'}`;
+  } else {
+    timeLine = `Time: ${item.normalTime || '—'}`;
+  }
+
+  const timingNoteParts = [
+    timeLine,
+    timingsResult.modeLabel,
+    timingMode === 'friday' && timingsResult.assemblyTimeText ? `Assembly: ${timingsResult.assemblyTimeText}` : '',
+    data.academicYear
+  ].filter(Boolean);
+
+  const titleBlockHtml = `
+    <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+      ${logoHtml}
+      <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
+        ${esc(data.schoolName || 'School Timetable')}
+      </h1>
+      <div style="font-size:${(fontPt * 1.05).toFixed(1)}pt; font-weight:700; text-transform:uppercase; letter-spacing:0.18em; margin-top:3px; color:#000;">
+        ${esc(`Period ${period}`)}
+      </div>
+      <div style="font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; margin-top:2px; font-weight:600;">
+        ${esc(timingNoteParts.join(' · '))}
+      </div>
+      <div style="margin-top:6px; border-top:1px solid #000; border-bottom:1px solid #000; height:2px;"></div>
+    </div>
+  `;
+
+  // Free staff calculation
+  const freeTeachers = getFreeTeachersForPeriod(data, periodIndex, opts);
+
+  // Group classes by section like Whole School print
+  const distinctSections = Array.from(
+    new Set(data.classes.map(c => (c[2] || '').trim()).filter(Boolean))
+  );
+
+  interface PeriodRowItem {
+    isSection: boolean;
+    secName?: string;
+    classItem?: ClassItem;
+  }
+
+  const rowItems: PeriodRowItem[] = [];
+
+  if (distinctSections.length > 0) {
+    distinctSections.forEach(sec => {
+      rowItems.push({ isSection: true, secName: sec });
+      const secClasses = data.classes.filter(c => (c[2] || '').trim() === sec);
+      secClasses.forEach(c => rowItems.push({ isSection: false, classItem: c }));
+    });
+
+    const unsectioned = data.classes.filter(c => !(c[2] || '').trim());
+    if (unsectioned.length > 0) {
+      rowItems.push({ isSection: true, secName: 'OTHER CLASSES' });
+      unsectioned.forEach(c => rowItems.push({ isSection: false, classItem: c }));
+    }
+  } else {
+    data.classes.forEach(c => rowItems.push({ isSection: false, classItem: c }));
+  }
+
+  const totalRows = rowItems.length;
+
+  const tableHeaderHtml = `
+    <tr style="background:#fff;">
+      <th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>
+      <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">SUBJECT - TEACHER</th>
+    </tr>
+  `;
+
+  const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
+  const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
+
+  let rowsHtml = '';
+  rowItems.forEach(itemRow => {
+    if (itemRow.isSection) {
+      rowsHtml += `
+        <tr style="background:#fff; height:calc(100% / ${totalRows});">
+          <td colspan="2" style="text-align:center; font-weight:800; text-transform:uppercase; letter-spacing:0.14em; font-size:${(fontPt * 0.95).toFixed(1)}pt; padding:4px 0; border:0.75pt solid #000; background:#fff; color:#000;">
+            ${esc(itemRow.secName)} ${itemRow.secName === 'OTHER CLASSES' ? '' : 'SECTION'}
+          </td>
+        </tr>
+      `;
+    } else {
+      const c = itemRow.classItem!;
+      const sub1 = (c[3] && c[3][periodIndex]) || '';
+      const t1 = (c[4] && c[4][periodIndex]) || '';
+      const s2 = c[5] ? c[5][periodIndex] : null;
+      const lines = wholeSchoolCellLines(sub1, t1, s2);
+
+      let inner = '';
+      if (lines.length === 1) {
+        inner = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;">${escWrap(lines[0])}</div>`;
+      } else {
+        inner = `<div style="line-height:1.2; text-align:center; color:#000; font-weight:600;"><div>${escWrap(lines[0])}</div><div style="margin-top:2px;">${escWrap(lines[1])}</div></div>`;
+      }
+
+      rowsHtml += `
+        <tr style="background:#fff; height:calc(100% / ${totalRows});">
+          <td style="${fStyle}">${esc(c[0])}</td>
+          <td style="${cStyle}">${inner}</td>
+        </tr>
+      `;
+    }
+  });
+
+  const differingNoteHtml = timingsResult.differingBreakNote
+    ? `<div style="margin-top:4px; font-size:${Math.max(6, fontPt * 0.75).toFixed(1)}pt; color:#000; font-style:italic;">* ${esc(timingsResult.differingBreakNote)}</div>`
+    : '';
+
+  return `
+    <div class="timetable-card-page" style="box-sizing:border-box; width:100%; height:100%; display:flex; flex-direction:column; padding:28px 24px; background:#fff; color:#000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; overflow:visible;">
+      ${titleBlockHtml}
+      <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
+        <table style="width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+          <thead>${tableHeaderHtml}</thead>
+          <tbody style="height:100%;">${rowsHtml}</tbody>
+        </table>
+        <div style="margin-top:6px; border:0.75pt solid #000; padding:6px 10px; font-size:${(fontPt * 0.95).toFixed(1)}pt; color:#000; line-height:1.3; overflow-wrap:anywhere; word-break:break-word;">
+          <strong style="font-weight:700;">Free teachers:</strong> ${freeTeachers.length ? esc(freeTeachers.join(', ')) : 'No free teachers'}
+        </div>
+        ${differingNoteHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Builds a complete standalone HTML document for iframe srcDoc or printing.
+ */
+export function buildCardDocumentHTML(cardInnerHtml: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 794px;
+      height: 1123px;
+      box-sizing: border-box;
+      background: #ffffff;
+      overflow: hidden;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body style="width:794px; height:1123px; margin:0; padding:0; background:#fff; overflow:hidden;">
+  ${cardInnerHtml}
+</body>
+</html>`;
+}
+
 /**
  * Main pagination calculation engine
  */
@@ -893,6 +1667,34 @@ export function computePrintStudioPages(
   const isLandscape = orientation === 'landscape';
   const pageWidth = isLandscape ? A4_LANDSCAPE.width : A4_PORTRAIT.width;
   const pageHeight = isLandscape ? A4_LANDSCAPE.height : A4_PORTRAIT.height;
+
+  // Dedicated single-page Teacher Wise card layout (identical to View tab teacher card)
+  if (type === 'teacher') {
+    const currentTeacher = opts.selectedTeacher || data.teachers[0] || '';
+    const customBodyHtml = buildTeacherCardHTML(data, currentTeacher, opts.teacherPeriodSummary, { fontPt });
+    return {
+      pages: [{
+        pageNumber: 1,
+        totalPages: 1,
+        isFirstPage: true,
+        headerHtml: '',
+        tableHeaderHtml: '',
+        rowsHtml: '',
+        footerHtml: '',
+        rowCount: data.periods.length,
+        customBodyHtml
+      }],
+      pageCount: 1,
+      lastPageFullness: 100,
+      fontPt,
+      orientation: 'portrait',
+      widthPx: A4_PORTRAIT.width,
+      heightPx: A4_PORTRAIT.height,
+      totalExpectedRows: data.periods.length,
+      totalRowsShown: data.periods.length,
+      allRowsFit: true
+    };
+  }
 
   // Dedicated cut-out teacher strips layout
   if (type === 'teacherstrips') {
@@ -1106,8 +1908,8 @@ export function computePrintStudioPages(
   // - Single-page timetables (or single-page group): stretch to fill the page
   // - Multi-page: stretch every page except the last one of the group. Leave the last page at its natural row height.
   // - Section band row must NOT be stretched: only normal rows get the extra height.
-  const stretchMultiplierCap = type === 'teacher' ? 3.0 : 2.2;
-  const maxAddRatio = stretchMultiplierCap - 1.0; // 1.2 or 2.0
+  const stretchMultiplierCap = 2.2;
+  const maxAddRatio = stretchMultiplierCap - 1.0; // 1.2
 
   const pages: ComputedPage[] = allBuckets.map((bucket, pIdx) => {
     const isFirstPage = bucket.isFirstPageOfGroup;

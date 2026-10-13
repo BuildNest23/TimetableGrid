@@ -13,6 +13,7 @@ export function triggerPrint(
   options: {
     printSize?: 'xs' | 's' | 'm' | 'l' | 'xl';
     orientation?: 'landscape' | 'portrait';
+    margin?: string;
   } = {}
 ) {
   const printArea = document.getElementById('printArea');
@@ -22,6 +23,7 @@ export function triggerPrint(
   const mult = (PRINT_SIZES[sizeKey] || PRINT_SIZES.m).mult;
   const portrait = options.orientation === 'portrait';
   const pageH = portrait ? '281mm' : '194mm';
+  const marginStr = options.margin !== undefined ? options.margin : '8mm';
 
   // Configure @page orientation + height
   const styleId = 'dynamicPrintPage';
@@ -33,7 +35,7 @@ export function triggerPrint(
   }
   styleEl.textContent = `
     @media print {
-      @page { size: A4 ${portrait ? 'portrait' : 'landscape'}; margin: 8mm; }
+      @page { size: A4 ${portrait ? 'portrait' : 'landscape'}; margin: ${marginStr}; }
       #printArea { --page-h: ${pageH}; }
     }
   `;
