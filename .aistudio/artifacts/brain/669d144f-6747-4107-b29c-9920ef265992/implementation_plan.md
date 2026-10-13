@@ -1,74 +1,77 @@
-# Implementation Plan: Live School Day Dashboard & Workload Collapse
+# Centered Period Header & 2-Column Class Grid with Centered Odd Card
 
-Transform `src/views/DashboardView.tsx` into a real-time school day command center that tracks the current period, assembly, or break as the day progresses, with full preview capabilities and a reorganized, responsive layout.
+Center the "Classes in Period" heading and period timing, position the class count badge on the far right, place the search bar directly below, and format the class tiles into a 2-column grid where odd final tiles are neatly centered under the row above.
 
-## 1. Architecture & Utilities
+---
 
-### 1.1 `src/hooks/useNow.ts`
-- Create a lightweight React hook that maintains the current local `Date`.
-- Updates every 10 seconds (or on `visibilitychange`) with minute precision.
-- Exposes `{ now, setOverrideTime, isLive, resetToLive }` to power real-time updates and interactive period jumps/testing.
+## User Review & Critical Decisions
 
-### 1.2 `src/utils/liveSchedule.ts` (Pure Logic)
-- **Time parsing & formatting**: Parse `"HH:mm"` times into minutes from midnight for exact comparisons.
-- **Day detection**:
-  - Determine current weekday index (0 for Monday, etc. matching `data.days`).
-  - Check if today matches `data.fridayTimings.dayIndex` and if Friday timings are active.
-  - Return whether today is an active school day (`dayIndex < data.daysPerWeek`).
-- **Timing slot resolution**:
-  - Use `getPeriodTimes(data)` and day-specific timings (`data.periodTimes` vs `data.fridayTimings.periodTimes`).
-  - Account for morning Assembly (`data.assemblyTime` or `fridayTimings.assemblyTime`).
-  - Account for Break after period $B$ with its exact start/end window.
-- **Schedule state machine**:
-  - Evaluates current time against slots:
-    - `'weekend'` / `'not_in_session'`: Outside school days.
-    - `'before_school'`: Before assembly / Period 1.
-    - `'assembly'`: During morning assembly.
-    - `'period'`: During an active period (with period number, start/end, remaining minutes, progress %).
-    - `'break'`: During school break (with break label, start/end, remaining minutes).
-    - `'after_school'`: After the final period has concluded.
-- **Class allocations resolver**:
-  - For the active period and day, extract each class's assigned subject and teacher from `data.assignments`.
-  - Match teachers against active leaves (`getLeavesForDate(todayKey)`) to flag absent teachers and substitution requirements.
+> [!IMPORTANT]
+> The following layout decisions have been confirmed through user clarification:
+> - **Grid Architecture**: 2 columns across both mobile and desktop views, with any odd trailing card centered under the two cards above it.
+> - **Header Structure**: "Classes in Period [X]" centered on top, time window centered below it, and the count badge (`13 of 13`) aligned to the far right.
+> - **Search Positioning**: Full-width filter/search bar placed directly below the centered header block.
 
-## 2. Dashboard Component Restructure (`src/views/DashboardView.tsx`)
+---
 
-Following the exact order specified:
-1. **Compact Top Bar**:
-   - School name, academic year, auto-save status indicator.
-   - Clean, compact "Open Timetable Editor" button.
-2. **"Right Now" Live Card**:
-   - Header with current clock time, date, live pulse indicator, and school session status.
-   - Time remaining badge and subtle progress bar for active period/break/assembly.
-   - **Period Jumper**: Segmented horizontal chips allowing quick switching to preview Period 1, Period 2, Break, etc., with a "Jump to Live" badge when browsing another period.
-   - **Class Allocations Grid**:
-     - Search filter to instantly find specific classes, teachers, or subjects.
-     - Responsive grid of compact class cards showing:
-       - Class name (bold)
-       - Subject badge (with color coding)
-       - Teacher name
-       - Amber leave notice if the assigned teacher is marked on leave today.
-     - Free/Unassigned periods clearly distinguished.
-     - Collapsible class container if the user wants to collapse the class list.
-   - **Off-Hours / Break States**:
-     - Friendly cards when before school, during break, or after school, with next upcoming period details.
-3. **Timetable Health Banner**:
-   - Retained exactly as is with conflict/unassigned warnings and jump-to-fix editor buttons.
-4. **Staff On Leave Today**:
-   - Retained with leave tags and quick link to Substitute Board.
-5. **Metric Cards**:
-   - Clean responsive grid (Classes, Teachers, Periods/Day, Subjects, Days/Week).
-6. **Teacher Weekly Workload (Moved to Bottom, Collapsed by Default)**:
-   - Header wrapped in an accessible `<button>` with rotating chevron, `aria-expanded`, and `aria-controls`.
-   - Smooth animated disclosure via `motion.div` / height transition.
-   - Persists open/closed state in `localStorage` under `utWorkloadOpen`.
-   - Preserves table columns and "Full Roster →" link.
-7. **Quick Action Buttons**:
-   - Preserved buttons for Master Data and Settings.
+## 1. Overview & Core Changes
 
-## 3. Verification Plan
-- **TypeScript & Build**: Run `compile_applet` and `lint_applet` to verify no errors. (Completed: Clean build, zero TypeScript errors)
-- **Live Detection**: Test with varied times (morning before school, assembly, period 1, break, period 5, after school, weekend). (Completed: Tested and verified)
-- **Period Jumper**: Confirm tapping any period chip displays that period's class allocations cleanly, and "Live" returns to actual clock. (Completed: Interactive jumper with live clock toggle)
-- **Teacher Leave Highlighting**: Confirm teachers on leave today show amber badge in the active class tiles. (Completed: Amber badge and substitute alert notice)
-- **Workload Collapse**: Verify localStorage persistence and toggle animation. (Completed: CSS grid accordion with utWorkloadOpen in localStorage)
+2. **Header & Count Badge Placement**:
+   - Title: `Classes in Period [X]` rendered bold in the center.
+   - Time: `(start – end)` rendered below the title in the center.
+   - Collapse Button: Positioned on the right of the header.
+   - Class Count Badge (`13 of 13`): Moved from the header to the end of the last class on the right side in the card (and positioned next to the centered odd 13th card).
+
+2. **Search Bar Placement**:
+   - Sits full-width directly beneath the centered header with quick-clear button and search icon.
+
+3. **2-Column Class Grid with Centered Odd Card**:
+   - The class cards are arranged in 2 columns (`grid grid-cols-2 gap-2.5 sm:gap-3`).
+   - For an odd count of classes (such as 13), the final card spans across the 2 columns (`col-span-2`) and is horizontally centered (`flex justify-center`) with width matching the column tiles (`w-[calc(50%-0.3125rem)] sm:w-[calc(50%-0.375rem)]`).
+   - Works dynamically for any number of classes (13, 15, or even counts).
+
+---
+
+## 2. Component Layout & Visual Hierarchy
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  [Right Now / School Live Card]                                        │
+│                                                                        │
+│  [Spacer / Anchor]       Classes in Period 1             [13 of 13] [▼]│
+│                             (08:00 – 08:40)                            │
+│                                                                        │
+│  [🔍 Filter class, subject, teacher...                              ✕] │
+│                                                                        │
+│  ┌───────────────────────────┐      ┌───────────────────────────┐      │
+│  │ Class 6A                  │      │ Class 6B                  │      │
+│  │ Math · Mr. Smith          │      │ English · Ms. Jane        │      │
+│  └───────────────────────────┘      └───────────────────────────┘      │
+│  ┌───────────────────────────┐      ┌───────────────────────────┐      │
+│  │ ...                       │      │ ...                       │      │
+│  └───────────────────────────┘      └───────────────────────────┘      │
+│                                                                        │
+│                ┌───────────────────────────┐                           │
+│                │ Class 10C (Odd 13th Card) │                           │
+│                │ Biology · Dr. Ray         │                           │
+│                └───────────────────────────┘                           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Implementation Plan Details
+
+- **File**: `src/views/DashboardView.tsx`
+- **Header Refactor**:
+  - Replace the current left-aligned flex row with a grid/flex layout:
+    - Left zone: Equal-width spacer or secondary affordance to ensure perfect geometric centering.
+    - Center zone: Flex column (`items-center text-center`) containing title and subtitle time.
+    - Right zone: Flex row (`items-center justify-end gap-2`) containing `{filteredAllocations.length} of {allocations.length}` and the collapse/expand chevron.
+- **Search Bar**:
+  - Position below the header block with `w-full`.
+- **Grid Layout**:
+  - Update `renderClassAllocations`:
+    - Iterate in pairs or map with `isOddLast` check.
+    - When `isOddLast` is true, wrap in `col-span-2 flex justify-center` with a matching column width container (`w-[calc(50%-0.3125rem)] sm:w-[calc(50%-0.375rem)]`).
+    - Standard cards maintain full width within their single column.

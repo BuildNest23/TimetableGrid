@@ -20,7 +20,15 @@ import {
   Users
 } from 'lucide-react';
 
-export const SubstituteView: React.FC = () => {
+interface SubstituteViewProps {
+  initialTeacher?: string;
+  onTeacherHandled?: () => void;
+}
+
+export const SubstituteView: React.FC<SubstituteViewProps> = ({
+  initialTeacher,
+  onTeacherHandled
+}) => {
   const {
     data,
     updateData,
@@ -73,9 +81,32 @@ export const SubstituteView: React.FC = () => {
     return todayIsSchoolDay ? today : nextSchoolDayFrom(today);
   });
 
-  const [absentTeacher, setAbsentTeacher] = useState<string>(
-    localStorage.getItem("utAbsentTeacher") || data.teachers[0] || ""
-  );
+  const [absentTeacher, setAbsentTeacher] = useState<string>(() => {
+    if (initialTeacher && data.teachers.includes(initialTeacher)) {
+      return initialTeacher;
+    }
+    try {
+      const stored = localStorage.getItem("utAbsentTeacher");
+      if (stored && data.teachers.includes(stored)) return stored;
+    } catch { /* ignore */ }
+    return data.teachers[0] || "";
+  });
+
+  // When navigated with an initial teacher (e.g. from Dashboard absent card), select them and snap to today
+  useEffect(() => {
+    if (initialTeacher && data.teachers.includes(initialTeacher)) {
+      setAbsentTeacher(initialTeacher);
+      try {
+        localStorage.setItem("utAbsentTeacher", initialTeacher);
+      } catch { /* ignore */ }
+      const today = dateKey();
+      if (isValidSchoolDay(today)) {
+        setLeaveDate(today);
+        updateData(prev => ({ ...prev, leaveDate: today }), true);
+      }
+      onTeacherHandled?.();
+    }
+  }, [initialTeacher, data.teachers, onTeacherHandled]);
   const [showLongLeaveForm, setShowLongLeaveForm] = useState<boolean>(false);
   const [editingLongLeaveId, setEditingLongLeaveId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);

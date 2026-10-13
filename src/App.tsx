@@ -42,6 +42,13 @@ const AppContent: React.FC = () => {
   useScrollRestore(`utScroll_${activeTab}`);
 
   const [editorJump, setEditorJump] = useState<{ period?: number; teacher?: string } | undefined>(undefined);
+  const [substituteTeacher, setSubstituteTeacher] = useState<string | undefined>(() => {
+    try {
+      return localStorage.getItem("utAbsentTeacher") || undefined;
+    } catch {
+      return undefined;
+    }
+  });
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const { undo, redo } = useTimetable();
 
@@ -49,6 +56,10 @@ const AppContent: React.FC = () => {
     setActiveTab(tab);
     try { localStorage.setItem('utCurrentTab', tab); } catch { /* ignore */ }
     if (jumpContext) {
+      if (tab === 'substitute' && jumpContext.teacher) {
+        setSubstituteTeacher(jumpContext.teacher);
+        try { localStorage.setItem("utAbsentTeacher", jumpContext.teacher); } catch { /* ignore */ }
+      }
       setEditorJump(jumpContext);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -103,7 +114,12 @@ const AppContent: React.FC = () => {
             />
           )}
           {activeTab === 'views' && <ViewTimetablesView />}
-          {activeTab === 'substitute' && <SubstituteView />}
+          {activeTab === 'substitute' && (
+            <SubstituteView
+              initialTeacher={substituteTeacher}
+              onTeacherHandled={() => setSubstituteTeacher(undefined)}
+            />
+          )}
           {activeTab === 'freestaff' && <FreeStaffView />}
           {activeTab === 'roster' && <TeachersRosterView />}
           {activeTab === 'settings' && <SchoolSetupView onNavigate={handleSelectTab} />}

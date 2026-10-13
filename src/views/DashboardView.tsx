@@ -145,6 +145,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     );
   }, [allocations, classSearch]);
 
+  const handleGoToSubstitute = useCallback((teacherName: string) => {
+    try {
+      localStorage.setItem("utAbsentTeacher", teacherName);
+    } catch { /* ignore */ }
+    onNavigate('substitute', { teacher: teacherName });
+  }, [onNavigate]);
+
   const effectivePeriodNum = data.periods[effectivePeriodIndex] || (effectivePeriodIndex + 1);
 
   // Find slot for effective period to display time range
@@ -383,47 +390,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
         {/* Class Allocations Section */}
         <div className="pt-2 border-t border-stone-100 dark:border-stone-800 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0">
-              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 whitespace-nowrap">
+          {/* Header Row: Centered title & time, collapse toggle at far right (count badge only when collapsed) */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+            {/* Left column placeholder to keep center column perfectly centered */}
+            <div aria-hidden="true" />
+
+            {/* Center: "Classes in Period X" with time below it */}
+            <div className="text-center px-1">
+              <h3 className="text-sm sm:text-base font-extrabold text-stone-900 dark:text-stone-100 tracking-tight">
                 Classes in Period {effectivePeriodNum}
               </h3>
-              <div className="inline-flex items-center gap-2 whitespace-nowrap shrink-0">
-                {effectiveSlot?.startStr && (
-                  <span className="text-xs font-semibold text-stone-500">
-                    ({effectiveSlot.startStr} – {effectiveSlot.endStr})
-                  </span>
-                )}
-                <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-semibold">
-                  {filteredAllocations.length} of {allocations.length}
-                </span>
-              </div>
+              {effectiveSlot?.startStr && (
+                <p className="text-xs font-semibold text-stone-500 dark:text-stone-400 mt-0.5">
+                  {effectiveSlot.startStr} – {effectiveSlot.endStr}
+                </p>
+              )}
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Search box for filtering classes */}
-              <div className="relative min-w-[180px] sm:min-w-[220px]">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
-                <input
-                  type="text"
-                  value={classSearch}
-                  onChange={e => setClassSearch(e.target.value)}
-                  placeholder="Filter class, subject, teacher..."
-                  className="w-full pl-8 pr-7 py-1.5 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-emerald-600 transition placeholder:text-stone-400"
-                />
-                {classSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setClassSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-0.5"
-                    aria-label="Clear search"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-
-              {/* Collapse/Expand toggle */}
+            {/* Right: Collapse toggle (and count badge only when collapsed) */}
+            <div className="justify-self-end flex items-center gap-1.5 shrink-0">
+              {isClassGridCollapsed && (
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold whitespace-nowrap border border-stone-200/60 dark:border-stone-700/60">
+                  {filteredAllocations.length} of {allocations.length}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setIsClassGridCollapsed(prev => !prev)}
@@ -436,84 +426,200 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* Grid of compact class tiles */}
+          {/* Full-width Search Box below centered header */}
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+            <input
+              type="text"
+              value={classSearch}
+              onChange={e => setClassSearch(e.target.value)}
+              placeholder="Filter class, subject, teacher..."
+              className="w-full pl-9 pr-8 py-2 bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl text-xs sm:text-sm text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 focus:border-emerald-600 transition placeholder:text-stone-400"
+            />
+            {classSearch && (
+              <button
+                type="button"
+                onClick={() => setClassSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1 cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Grid of compact class tiles - 2 columns on mobile and desktop, centering odd last card and placing count at end of last class to the right */}
           {!isClassGridCollapsed && (
             filteredAllocations.length === 0 ? (
               <div className="text-center py-8 text-stone-400 text-xs bg-stone-50 dark:bg-stone-800/40 rounded-2xl">
                 No classes match "{classSearch}"
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5">
-                {filteredAllocations.map(alloc => (
-                  <div
-                    key={alloc.className}
-                    className={`p-3 rounded-2xl border transition-all text-xs flex flex-col justify-between min-h-[96px] shadow-2xs ${
-                      alloc.isTeacherOnLeave || alloc.isSlot2TeacherOnLeave
-                        ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800/80 ring-1 ring-amber-400/30'
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2.5">
+                  {filteredAllocations.map((alloc, index) => {
+                    const isOddLast =
+                      filteredAllocations.length % 2 === 1 &&
+                      index === filteredAllocations.length - 1;
+
+                    const hasAbsentTeacher = alloc.isTeacherOnLeave || alloc.isSlot2TeacherOnLeave;
+                    const primaryAbsentTeacher = alloc.isTeacherOnLeave
+                      ? alloc.teacher
+                      : alloc.slot2Teacher;
+
+                    const cardContent = (
+                      <>
+                        <div>
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <span className="font-extrabold text-stone-900 dark:text-stone-100 truncate">
+                              {alloc.className}
+                            </span>
+                            {alloc.section && (
+                              <span className="text-[10px] text-stone-400 shrink-0 font-medium">
+                                {alloc.section}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Subject Badge */}
+                          <div className="mb-1.5">
+                            <span className={`inline-block px-1.5 py-0.5 rounded-md font-semibold text-[11px] truncate max-w-full ${
+                              alloc.isFree
+                                ? 'bg-stone-100 dark:bg-stone-700 text-stone-500'
+                                : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200'
+                            }`}>
+                              {alloc.subject}
+                            </span>
+
+                            {alloc.slot2Subject && (
+                              <span className="inline-block px-1.5 py-0.5 rounded-md font-semibold text-[10px] bg-sky-100 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 ml-1 truncate max-w-full">
+                                + {alloc.slot2Subject}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Teacher & Leave Status */}
+                        <div className="pt-1 border-t border-stone-100 dark:border-stone-700/60">
+                          {alloc.isTeacherOnLeave ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1 font-bold text-amber-900 dark:text-amber-300 truncate">
+                                <UserX className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span className="truncate">{alloc.teacher}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/60 px-1 py-0.5 rounded leading-tight">
+                                  On Leave
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleGoToSubstitute(alloc.teacher);
+                                  }}
+                                  className="text-[10px] font-bold text-amber-800 dark:text-amber-300 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                  title={`Find substitute for ${alloc.teacher}`}
+                                >
+                                  Sub →
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-stone-600 dark:text-stone-300 font-medium truncate flex items-center gap-1">
+                              <span className="truncate">{alloc.teacher}</span>
+                            </div>
+                          )}
+
+                          {/* Slot 2 Teacher if present */}
+                          {alloc.slot2Teacher && (
+                            <div className={`text-[10px] truncate flex items-center justify-between gap-1 ${
+                              alloc.isSlot2TeacherOnLeave ? 'text-amber-700 font-bold' : 'text-stone-500 dark:text-stone-400'
+                            }`}>
+                              <span className="truncate">+ {alloc.slot2Teacher} {alloc.isSlot2TeacherOnLeave && '(Leave)'}</span>
+                              {alloc.isSlot2TeacherOnLeave && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleGoToSubstitute(alloc.slot2Teacher!);
+                                  }}
+                                  className="text-[9px] font-bold text-amber-800 dark:text-amber-300 hover:underline cursor-pointer ml-1"
+                                  title={`Find substitute for ${alloc.slot2Teacher}`}
+                                >
+                                  Sub →
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+
+                    const cardClasses = `p-3 rounded-2xl border transition-all text-xs flex flex-col justify-between min-h-[96px] shadow-2xs ${
+                      hasAbsentTeacher
+                        ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800/80 ring-1 ring-amber-400/30 hover:ring-2 hover:ring-amber-500 hover:shadow-md cursor-pointer active:scale-[0.99]'
                         : alloc.isFree
                         ? 'bg-stone-50 dark:bg-stone-800/40 border-stone-200/80 dark:border-stone-800 text-stone-400'
                         : 'bg-white dark:bg-stone-800/80 border-stone-200 dark:border-stone-700 hover:border-emerald-500/60'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-1 mb-1">
-                        <span className="font-extrabold text-stone-900 dark:text-stone-100 truncate">
-                          {alloc.className}
-                        </span>
-                        {alloc.section && (
-                          <span className="text-[10px] text-stone-400 shrink-0 font-medium">
-                            {alloc.section}
-                          </span>
-                        )}
-                      </div>
+                    }`;
 
-                      {/* Subject Badge */}
-                      <div className="mb-1.5">
-                        <span className={`inline-block px-1.5 py-0.5 rounded-md font-semibold text-[11px] truncate max-w-full ${
-                          alloc.isFree
-                            ? 'bg-stone-100 dark:bg-stone-700 text-stone-500'
-                            : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200'
-                        }`}>
-                          {alloc.subject}
-                        </span>
+                    const cardClickProps = hasAbsentTeacher && primaryAbsentTeacher ? {
+                      role: 'button' as const,
+                      tabIndex: 0,
+                      onClick: () => handleGoToSubstitute(primaryAbsentTeacher),
+                      onKeyDown: (e: React.KeyboardEvent) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleGoToSubstitute(primaryAbsentTeacher);
+                        }
+                      },
+                      title: `Teacher ${primaryAbsentTeacher} is absent today. Tap to arrange substitute in Substitute Board.`
+                    } : {};
 
-                        {alloc.slot2Subject && (
-                          <span className="inline-block px-1.5 py-0.5 rounded-md font-semibold text-[10px] bg-sky-100 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 ml-1 truncate max-w-full">
-                            + {alloc.slot2Subject}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Teacher & Leave Status */}
-                    <div className="pt-1 border-t border-stone-100 dark:border-stone-700/60">
-                      {alloc.isTeacherOnLeave ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1 font-bold text-amber-900 dark:text-amber-300 truncate">
-                            <UserX className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span className="truncate">{alloc.teacher}</span>
+                    if (isOddLast) {
+                      return (
+                        <div
+                          key={alloc.className}
+                          className="col-span-2 relative flex items-center justify-center w-full min-h-[96px]"
+                        >
+                          {/* Centered odd last card under middle of above 2 cards */}
+                          <div
+                            {...cardClickProps}
+                            className={`${cardClasses} w-[calc(50%-5px)]`}
+                          >
+                            {cardContent}
                           </div>
-                          <div className="text-[10px] font-semibold text-amber-800 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/60 px-1 py-0.5 rounded leading-tight">
-                            On Leave · Needs Sub
+
+                          {/* "13 of 13" count badge moved to the end of last class to the right side in this same card */}
+                          <div className="absolute right-0 bottom-1 sm:bottom-2 flex items-center">
+                            <span className="text-[10px] sm:text-xs px-2.5 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold whitespace-nowrap border border-stone-200/60 dark:border-stone-700/60 shadow-2xs">
+                              {filteredAllocations.length} of {allocations.length}
+                            </span>
                           </div>
                         </div>
-                      ) : (
-                        <div className="text-stone-600 dark:text-stone-300 font-medium truncate flex items-center gap-1">
-                          <span className="truncate">{alloc.teacher}</span>
-                        </div>
-                      )}
+                      );
+                    }
 
-                      {/* Slot 2 Teacher if present */}
-                      {alloc.slot2Teacher && (
-                        <div className={`text-[10px] truncate ${
-                          alloc.isSlot2TeacherOnLeave ? 'text-amber-700 font-bold' : 'text-stone-500 dark:text-stone-400'
-                        }`}>
-                          + {alloc.slot2Teacher} {alloc.isSlot2TeacherOnLeave && '(Leave)'}
-                        </div>
-                      )}
-                    </div>
+                    return (
+                      <div
+                        key={alloc.className}
+                        {...cardClickProps}
+                        className={`${cardClasses} w-full`}
+                      >
+                        {cardContent}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* If even number of classes, place count badge at the end of the classes on the right side */}
+                {filteredAllocations.length % 2 === 0 && (
+                  <div className="flex justify-end pt-1">
+                    <span className="text-[10px] sm:text-xs px-2.5 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 font-bold whitespace-nowrap border border-stone-200/60 dark:border-stone-700/60 shadow-2xs">
+                      {filteredAllocations.length} of {allocations.length}
+                    </span>
                   </div>
-                ))}
+                )}
               </div>
             )
           )}
@@ -620,9 +726,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             {todayLeaves.map(t => {
               const ll = longLeaves.find(x => x.teacher === t);
               return (
-                <div
+                <button
                   key={t}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-300"
+                  type="button"
+                  onClick={() => handleGoToSubstitute(t)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-300 transition cursor-pointer active:scale-95 shadow-2xs"
+                  title={`Arrange substitute for ${t}`}
                 >
                   <span>{t}</span>
                   {ll && (
@@ -630,7 +739,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                       ({ll.reason || 'Long leave'})
                     </span>
                   )}
-                </div>
+                  <span className="text-[10px] opacity-75 font-mono ml-0.5">→</span>
+                </button>
               );
             })}
           </div>
