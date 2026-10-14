@@ -814,13 +814,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           onClick={toggleWorkload}
           aria-expanded={isWorkloadOpen}
           aria-controls="teacher-workload-content"
-          className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-stone-50/70 dark:hover:bg-stone-800/40 transition cursor-pointer group"
+          className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-stone-50/70 dark:hover:bg-stone-800/40 transition cursor-pointer group"
         >
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded-xl">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded-xl shrink-0">
               <Users className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 group-hover:text-emerald-800 dark:group-hover:text-emerald-300 transition">
                 Teacher Weekly Workload
               </h3>
@@ -832,7 +832,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             <span
               onClick={e => {
                 e.stopPropagation();
@@ -846,7 +846,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                   onNavigate('roster');
                 }
               }}
-              className="text-xs font-bold text-emerald-800 dark:text-emerald-400 hover:underline cursor-pointer"
+              className="text-xs font-bold text-emerald-800 dark:text-emerald-400 hover:underline cursor-pointer whitespace-nowrap"
             >
               Full Roster →
             </span>
