@@ -333,15 +333,6 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={handleResetTimetable}
-        className="w-full min-h-[40px] py-2 px-3 flex items-center justify-center gap-2 rounded-xl text-xs font-bold bg-white dark:bg-stone-900 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
-      >
-        <RotateCcw className="w-4 h-4" />
-        <span>Reset Timetable (keeps teachers &amp; subjects)</span>
-      </button>
-
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         {data.classes.map((c, i) => (
           <button
@@ -922,6 +913,25 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
           </div>
         </div>
       )}
+
+      <div className="bg-white dark:bg-stone-900 rounded-3xl p-5 border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-3">
+        <div>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+            Start a New Timetable
+          </h4>
+          <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
+            Clears all assigned periods in every class. Your teachers, subjects and classes are kept.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleResetTimetable}
+          className="w-full min-h-[44px] py-2.5 px-4 flex items-center justify-center gap-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition"
+        >
+          <RotateCcw className="w-4 h-4" />
+          <span>Reset Timetable</span>
+        </button>
+      </div>
 
       <MaterialBottomSheet
         isOpen={pickerConfig.isOpen}
