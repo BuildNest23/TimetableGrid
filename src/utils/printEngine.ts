@@ -177,7 +177,7 @@ export function measureLayoutElements(
 
     host.innerHTML = `
       <div id="measure_title_block" style="box-sizing:border-box;">${titleBlockHtml}</div>
-      <table style="width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+      <table style="text-align:center; width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
         <thead id="measure_thead">${tableHeaderTr}</thead>
         <tbody id="measure_tbody">
           ${rowDefs.map(r => r.render(0)).join('')}
@@ -322,8 +322,8 @@ function buildSectionGroups(
 
     const buildTableHeader = () => {
       let tr = `<tr style="background:#d9d9d9;">`;
-      tr += `<th style="${GRAY_BG} width:10%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>`;
-      tr += `<th style="${GRAY_BG} width:10%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">INCHARGE</th>`;
+      tr += `<th style="${GRAY_BG} width:10%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>`;
+      tr += `<th style="${GRAY_BG} width:10%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">INCHARGE</th>`;
       grayPeriodCols.forEach(col => {
         tr += col.html;
         if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
@@ -351,8 +351,8 @@ function buildSectionGroups(
         label: c[0],
         render: (addedPaddingV: number) => {
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000; ${GRAY_BG}`;
-          const incStyle = `text-align:left; font-weight:600; font-style:normal; font-size:${fontPt}pt; padding:${padV}px ${cellPaddingH}px; ${rowBorder} color:#000;`;
+          const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000; ${GRAY_BG}`;
+          const incStyle = `text-align:center; font-weight:600; font-style:normal; font-size:${fontPt}pt; padding:${padV}px ${cellPaddingH}px; ${rowBorder} color:#000;`;
           const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000;`;
 
           let cellsHtml = '';
@@ -454,7 +454,7 @@ function buildSectionGroups(
   if (type === 'allteachers') {
     const buildTableHeader = () => {
       let tr = `<tr style="background:#d9d9d9;">`;
-      tr += `<th style="${GRAY_BG} width:14%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TEACHER</th>`;
+      tr += `<th style="${GRAY_BG} width:14%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TEACHER</th>`;
       grayPeriodCols.forEach(col => {
         tr += col.html;
         if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
@@ -475,7 +475,7 @@ function buildSectionGroups(
         label: t,
         render: (addedPaddingV: number) => {
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000; ${GRAY_BG}`;
+          const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000; ${GRAY_BG}`;
           const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
           let cellsHtml = '';
@@ -510,7 +510,7 @@ function buildSectionGroups(
 
     const buildTableHeader = () => {
       let tr = `<tr style="background:#fff;">`;
-      tr += `<th style="width:14%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DAY</th>`;
+      tr += `<th style="width:14%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DAY</th>`;
       periodCols.forEach(col => {
         tr += col.html;
         if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
@@ -527,7 +527,7 @@ function buildSectionGroups(
         label: dayName,
         render: (addedPaddingV: number) => {
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
+          const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
           const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
           let cellsHtml = '';
@@ -563,11 +563,11 @@ function buildSectionGroups(
     const buildTableHeader = () => {
       let tr = `<tr style="background:#fff;">`;
       if (showTimes) {
-        tr += `<th style="width:20%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>`;
+        tr += `<th style="width:20%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>`;
         tr += `<th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME</th>`;
         tr += `<th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>`;
       } else {
-        tr += `<th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>`;
+        tr += `<th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>`;
         tr += `<th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>`;
       }
       tr += `</tr>`;
@@ -584,7 +584,7 @@ function buildSectionGroups(
         label: `Period ${p}`,
         render: (addedPaddingV: number) => {
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+          const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
           const timeStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
           const cStyle = `text-align:center; vertical-align:middle; padding:${padV}px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
@@ -629,7 +629,7 @@ function buildSectionGroups(
   // =========================================================================
   const buildRosterHeader = () => `
     <tr style="background:#fff;">
-      <th style="width:24%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">TEACHER</th>
+      <th style="width:24%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">TEACHER</th>
       <th style="width:14%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">GROUP</th>
       <th style="width:12%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">GRADE</th>
       <th style="width:16%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">DESIGNATION</th>
@@ -648,7 +648,7 @@ function buildSectionGroups(
       label: t,
       render: (addedPaddingV: number) => {
         const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-        const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
+        const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
         const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
         return `
@@ -679,7 +679,7 @@ function buildSectionGroups(
   if (type === 'allclasses') {
     const buildTableHeader = () => {
       let tr = `<tr style="background:#fff;">`;
-      tr += `<th style="width:14%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DAY</th>`;
+      tr += `<th style="width:14%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DAY</th>`;
       periodCols.forEach(col => {
         tr += col.html;
         if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
@@ -697,7 +697,7 @@ function buildSectionGroups(
           label: dayName,
           render: (addedPaddingV: number) => {
             const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-            const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
+            const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
             const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
             let cellsHtml = '';
@@ -749,7 +749,7 @@ function buildSectionGroups(
 
     const buildTimingsHeader = () => `
       <tr style="background:#fff;">
-        <th style="width:24%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+        <th style="width:24%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
         <th style="width:42%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME SLOT</th>
         <th style="width:34%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">DURATION (MINS)</th>
       </tr>
@@ -768,7 +768,7 @@ function buildSectionGroups(
           label: 'Assembly',
           render: (addedPaddingV: number) => {
             const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-            const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+            const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
             const cStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
             return `
               <tr style="background:#fff;">
@@ -788,7 +788,7 @@ function buildSectionGroups(
           label: `Period ${p}`,
           render: (addedPaddingV: number) => {
             const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-            const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+            const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
             const cStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
             return `
               <tr style="background:#fff;">
@@ -808,7 +808,7 @@ function buildSectionGroups(
             label: breakLabel,
             render: (addedPaddingV: number) => {
               const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-              const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
+              const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px 8px; ${rowBorder} color:#000;`;
               const cStyle = `text-align:center; padding:${padV}px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
               return `
                 <tr style="background:#fff;">
@@ -1011,18 +1011,18 @@ export function buildClassCardHTML(
   // Table header
   const tableHeaderHtml = hasTimes ? `
     <tr style="background:#fff;">
-      <th style="width:20%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="width:20%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
       <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME</th>
       <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
     </tr>
   ` : `
     <tr style="background:#fff;">
-      <th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
       <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
     </tr>
   `;
 
-  const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
+  const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
   const timeStyle = `text-align:center; padding:4px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
   const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
 
@@ -1105,7 +1105,7 @@ export function buildClassCardHTML(
     <div class="timetable-card-page" style="box-sizing:border-box; width:100%; height:100%; display:flex; flex-direction:column; padding:28px 24px; background:#fff; color:#000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; overflow:visible;">
       ${titleBlockHtml}
       <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
-        <table style="width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+        <table style="text-align:center; width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
           <thead>${tableHeaderHtml}</thead>
           <tbody style="height:100%;">${rowsHtml}</tbody>
         </table>
@@ -1176,18 +1176,18 @@ export function buildTeacherCardHTML(
   // Table header
   const tableHeaderHtml = hasTimes ? `
     <tr style="background:#fff;">
-      <th style="width:20%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="width:20%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
       <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TIME</th>
       <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
     </tr>
   ` : `
     <tr style="background:#fff;">
-      <th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
+      <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">PERIOD</th>
       <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">ASSIGNMENT</th>
     </tr>
   `;
 
-  const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
+  const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
   const timeStyle = `text-align:center; padding:4px 8px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
   const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
 
@@ -1261,7 +1261,7 @@ export function buildTeacherCardHTML(
     <div class="timetable-card-page" style="box-sizing:border-box; width:100%; height:100%; display:flex; flex-direction:column; padding:28px 24px; background:#fff; color:#000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; overflow:visible;">
       ${titleBlockHtml}
       <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
-        <table style="width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+        <table style="text-align:center; width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
           <thead>${tableHeaderHtml}</thead>
           <tbody style="height:100%;">${rowsHtml}</tbody>
         </table>
@@ -1368,12 +1368,12 @@ export function buildPeriodCardHTML(
 
   const tableHeaderHtml = `
     <tr style="background:#fff;">
-      <th style="width:25%; text-align:left; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>
+      <th style="width:25%; text-align:center; padding:4px 8px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>
       <th style="text-align:center; padding:4px 12px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">SUBJECT - TEACHER</th>
     </tr>
   `;
 
-  const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
+  const fStyle = `text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:4px 8px; ${rowBorder} color:#000;`;
   const cStyle = `text-align:center; vertical-align:middle; padding:4px 12px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600; overflow-wrap:anywhere; word-break:break-word;`;
 
   let rowsHtml = '';
@@ -1417,7 +1417,7 @@ export function buildPeriodCardHTML(
     <div class="timetable-card-page" style="box-sizing:border-box; width:100%; height:100%; display:flex; flex-direction:column; padding:28px 24px; background:#fff; color:#000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; overflow:visible;">
       ${titleBlockHtml}
       <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
-        <table style="width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+        <table style="text-align:center; width:100%; height:100%; flex:1; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
           <thead>${tableHeaderHtml}</thead>
           <tbody style="height:100%;">${rowsHtml}</tbody>
         </table>
@@ -1453,6 +1453,7 @@ export function buildCardDocumentHTML(cardInnerHtml: string): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
     * { box-sizing: border-box; }
+    table, th, td { text-align: center; }
   </style>
 </head>
 <body style="width:794px; height:1123px; margin:0; padding:0; background:#fff; overflow:hidden;">
@@ -1537,7 +1538,7 @@ export function computePrintStudioPages(
           return `
             <tr style="height:1px;">
               <td style="padding:2px 4px; border:0.75pt solid #000; font-size:${periodPt}pt; font-weight:700; text-align:center; width:22%; color:#000;">P${p}</td>
-              <td style="padding:2px 4px; border:0.75pt solid #000; font-size:${periodPt}pt; text-align:left; color:#000; font-weight:500;">${escWrap(summary)}</td>
+              <td style="padding:2px 4px; border:0.75pt solid #000; font-size:${periodPt}pt; text-align:center; color:#000; font-weight:500;">${escWrap(summary)}</td>
             </tr>
           `;
         }).join('');
@@ -1547,7 +1548,7 @@ export function computePrintStudioPages(
             <div style="text-align:center; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${teacherNamePt}pt; border-bottom:1pt solid #000; padding-bottom:1mm; margin-bottom:1.5mm; color:#000;">
               ${esc(t)}
             </div>
-            <table style="width:100%; height:100%; border-collapse:collapse; table-layout:fixed; border:0.75pt solid #000; background:#fff;">
+            <table style="text-align:center; width:100%; height:100%; border-collapse:collapse; table-layout:fixed; border:0.75pt solid #000; background:#fff;">
               <tbody>${periodRows}</tbody>
             </table>
           </div>
@@ -1858,7 +1859,7 @@ export function buildPrintableHtml(
       ">
         ${page.headerHtml}
         <div style="flex:1; display:flex; flex-direction:column; min-height:0; overflow:visible;">
-          <table style="width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+          <table style="text-align:center; width:100%; border-collapse:collapse; table-layout:fixed; overflow-wrap:anywhere; word-break:break-word; background:#fff; border:0.75pt solid #000; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
             <thead>${page.tableHeaderHtml}</thead>
             <tbody>${page.rowsHtml}</tbody>
           </table>
