@@ -440,8 +440,10 @@ export const ViewTimetablesView: React.FC = () => {
     if (!popupItem || !cardHtml) return;
     setIsPrinting(true);
     try {
-      const doc = buildCardDocumentHTML(cardHtml);
-      triggerPrint(doc);
+      // Fixed full-page A4 portrait sheet so the card stretches to fill the whole page
+      // (same layout as the card preview), instead of collapsing to its content height.
+      const sheet = `<div class="print-sheet fixed-sheet" style="width:100%; height:var(--page-h, 281mm); max-height:var(--page-h, 281mm); overflow:hidden; display:flex; flex-direction:column;">${cardHtml}</div>`;
+      triggerPrint(sheet, { orientation: 'portrait' });
     } catch (err) {
       console.error('Print error:', err);
       showToast('Failed to start print.');
