@@ -2,7 +2,7 @@ import type { PeriodsDisplay } from '../types/timetable';
 
 // Heading for the periods column, based on the School Setup choice.
 export const periodsHeading = (mode: PeriodsDisplay = 'both'): string =>
-  mode === 'day' ? 'Periods D' : mode === 'week' ? 'Periods W' : 'Periods D/W';
+  mode === 'day' ? 'Periods/Day' : mode === 'week' ? 'Periods/Week' : 'Periods Day/Week';
 
 // Value for the periods column: per day, per week, or "perDay/perWeek" (e.g. 3/15).
 export const formatPeriodsDW = (
