@@ -52,6 +52,26 @@ export const PrintStudioView: React.FC = () => {
   const [showTimes, setShowTimes] = useState<boolean>(() => data.printTimes ?? false);
   const [showBreakCol, setShowBreakCol] = useState<boolean>(() => data.printBreakCol ?? true);
   const [oneSectionPerPage, setOneSectionPerPage] = useState<boolean>(false);
+  // Saved second header, kept separately for Whole School and All Teachers
+  const SUBTITLE_KEY = 'printStudioSecondHeaders';
+  const [customSubtitles, setCustomSubtitles] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem(SUBTITLE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+  const supportsSubtitle = type === 'whole' || type === 'allteachers';
+  const customSubtitle = supportsSubtitle ? (customSubtitles[type] || '') : '';
+  const setCustomSubtitle = (v: string) => {
+    setCustomSubtitles(prev => {
+      const next = { ...prev, [type]: v };
+      try { localStorage.setItem(SUBTITLE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   // Safety reduction & layout error checking
   const [safetyReductionPx, setSafetyReductionPx] = useState<number>(0);
@@ -207,9 +227,27 @@ export const PrintStudioView: React.FC = () => {
     safetyReductionPx
   ]);
 
-  const layoutResult = useMemo(() => {
+  const rawLayoutResult = useMemo(() => {
     return computePrintStudioPages(data, layoutOpts);
   }, [data, layoutOpts, measureKey]);
+
+  // Apply the custom second header (line below the school name) if the user typed one
+  const layoutResult = useMemo(() => {
+    const custom = customSubtitle.trim();
+    if (!custom) return rawLayoutResult;
+    const re = /(letter-spacing:0\.18em;[^"]*">\s*)[\s\S]*?(\s*<\/div>)/;
+    const replacement = esc(custom);
+    const swap = (html?: string) =>
+      html ? html.replace(re, (_m, a, b) => `${a}${replacement}${b}`) : html;
+    return {
+      ...rawLayoutResult,
+      pages: rawLayoutResult.pages.map(pg => ({
+        ...pg,
+        headerHtml: swap(pg.headerHtml) as string,
+        customBodyHtml: swap(pg.customBodyHtml),
+      })),
+    };
+  }, [rawLayoutResult, customSubtitle]);
 
   // Fit to 1 page or Fit to 2 pages handlers
   const handleAutoFit = (targetPages: number) => {
@@ -729,16 +767,27 @@ export const PrintStudioView: React.FC = () => {
           </button>
         </div>
 
-        {/* Tip info card */}
-        <div className="p-4 bg-stone-100 dark:bg-stone-900/60 rounded-2xl border border-stone-200 dark:border-stone-800 text-[11px] text-stone-500 leading-relaxed space-y-1">
-          <div className="font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+        {/* Second header (subtitle below school name) - Whole School & All Teachers only */}
+        {supportsSubtitle && (
+        <div className="p-4 bg-stone-100 dark:bg-stone-900/60 rounded-2xl border border-stone-200 dark:border-stone-800 text-[11px] text-stone-500 leading-relaxed space-y-2">
+          <label
+            htmlFor="print-second-header"
+            className="font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5"
+          >
             <Info className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Ink-Saving Ruled Design</span>
-          </div>
-          <p>
-            Pure white sheet, solid black lines, serif school titles, and centered section bands. No ink-wasting color fills.
-          </p>
+            <span>Second Header</span>
+          </label>
+          <input
+            id="print-second-header"
+            type="text"
+            value={customSubtitle}
+            onChange={(e) => setCustomSubtitle(e.target.value)}
+            placeholder="e.g. Whole School Timetable 2026-27"
+            className="w-full px-3 py-2 text-xs rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+          />
+          <p>Printed below the school name. Saved automatically. Leave empty to use the default title.</p>
         </div>
+        )}
       </div>
 
       {/* ---------------- RIGHT PANE: LIVE A4 PAPER PREVIEW ---------------- */}
