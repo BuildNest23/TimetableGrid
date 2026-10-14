@@ -898,9 +898,9 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
               }}
               className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100"
             >
-              <option value="day">Per Day (Periods D)</option>
-              <option value="week">Per Week (Periods W)</option>
-              <option value="both">Both, e.g. 3/15 (Periods D/W)</option>
+              <option value="day">Per Day (Periods/Day)</option>
+              <option value="week">Per Week (Periods/Week)</option>
+              <option value="both">Both, e.g. 3/15 (Periods Day/Week)</option>
             </select>
           </div>
 
