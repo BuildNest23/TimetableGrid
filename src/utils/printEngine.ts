@@ -228,14 +228,14 @@ export function buildTitleBlockHtml(
 ): string {
   const logoImgHtml = data.schoolLogo
     ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
-         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:78px; max-width:120px; object-fit:contain;" />
        </div>`
     : '';
 
   const metaLine = [data.academicYear, data.printNote].filter(Boolean).join(' · ');
 
   return `
-    <div style="position:relative; text-align:center; margin-bottom:8px; padding-bottom:6px;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:8px; padding-bottom:6px;">
       ${logoImgHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
@@ -303,6 +303,13 @@ function buildSectionGroups(
     };
   });
 
+  // Gray shading (header row + first column) used by Whole School and All Teachers
+  const GRAY_BG = 'background:#d9d9d9; -webkit-print-color-adjust:exact; print-color-adjust:exact;';
+  const grayPeriodCols = periodCols.map(col => ({
+    ...col,
+    html: col.html.replace('<th style="', `<th style="${GRAY_BG} `)
+  }));
+
   // =========================================================================
   // 1. WHOLE SCHOOL
   // Columns: Class, Incharge, Period 1..N (and break)
@@ -314,10 +321,10 @@ function buildSectionGroups(
     const baseTitle = data.wholeTitle || 'Whole School Timetable';
 
     const buildTableHeader = () => {
-      let tr = `<tr style="background:#fff;">`;
-      tr += `<th style="width:10%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>`;
-      tr += `<th style="width:10%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">INCHARGE</th>`;
-      periodCols.forEach(col => {
+      let tr = `<tr style="background:#d9d9d9;">`;
+      tr += `<th style="${GRAY_BG} width:10%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">CLASS</th>`;
+      tr += `<th style="${GRAY_BG} width:10%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">INCHARGE</th>`;
+      grayPeriodCols.forEach(col => {
         tr += col.html;
         if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
       });
@@ -344,7 +351,7 @@ function buildSectionGroups(
         label: c[0],
         render: (addedPaddingV: number) => {
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
+          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000; ${GRAY_BG}`;
           const incStyle = `text-align:left; font-weight:600; font-style:normal; font-size:${fontPt}pt; padding:${padV}px ${cellPaddingH}px; ${rowBorder} color:#000;`;
           const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000;`;
 
@@ -446,9 +453,9 @@ function buildSectionGroups(
   // =========================================================================
   if (type === 'allteachers') {
     const buildTableHeader = () => {
-      let tr = `<tr style="background:#fff;">`;
-      tr += `<th style="width:14%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TEACHER</th>`;
-      periodCols.forEach(col => {
+      let tr = `<tr style="background:#d9d9d9;">`;
+      tr += `<th style="${GRAY_BG} width:14%; text-align:left; padding:3px 4px; ${thBorder} font-size:${fontPt}pt; letter-spacing:0.06em;">TEACHER</th>`;
+      grayPeriodCols.forEach(col => {
         tr += col.html;
         if (hasBreakCol && col.p === data.breakAfter) tr += breakThHtml;
       });
@@ -468,7 +475,7 @@ function buildSectionGroups(
         label: t,
         render: (addedPaddingV: number) => {
           const padV = (cellPaddingV + addedPaddingV).toFixed(2);
-          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000;`;
+          const fStyle = `text-align:left; font-family:Georgia, 'Times New Roman', serif; font-weight:700; font-size:${(fontPt * 1.05).toFixed(1)}pt; padding:${padV}px ${cellPaddingH + 2}px; ${rowBorder} color:#000; ${GRAY_BG}`;
           const cStyle = `text-align:center; padding:${padV}px ${cellPaddingH}px; ${rowBorder} font-size:${fontPt}pt; color:#000; font-weight:600;`;
 
           let cellsHtml = '';
@@ -976,7 +983,7 @@ export function buildClassCardHTML(
   // Header Logo & Title
   const logoHtml = data.schoolLogo
     ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
-         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:78px; max-width:120px; object-fit:contain;" />
        </div>`
     : '';
 
@@ -984,7 +991,7 @@ export function buildClassCardHTML(
   const metaLine = [inchargePart, data.academicYear, timings.cardSubtitle].filter(Boolean).join(' · ');
 
   const titleBlockHtml = `
-    <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
       ${logoHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
@@ -1132,7 +1139,7 @@ export function buildTeacherCardHTML(
   // Header Logo & Title
   const logoHtml = data.schoolLogo
     ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
-         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:78px; max-width:120px; object-fit:contain;" />
        </div>`
     : '';
 
@@ -1149,7 +1156,7 @@ export function buildTeacherCardHTML(
   const timingNoteLine = timings.cardSubtitle;
 
   const titleBlockHtml = `
-    <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
       ${logoHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
@@ -1292,7 +1299,7 @@ export function buildPeriodCardHTML(
   // Header Logo & Title
   const logoHtml = data.schoolLogo
     ? `<div style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center;">
-         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:46px; max-width:70px; object-fit:contain;" />
+         <img src="${esc(data.schoolLogo)}" alt="" style="max-height:78px; max-width:120px; object-fit:contain;" />
        </div>`
     : '';
 
@@ -1310,7 +1317,7 @@ export function buildPeriodCardHTML(
   ].filter(Boolean);
 
   const titleBlockHtml = `
-    <div style="position:relative; text-align:center; margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
       ${logoHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
