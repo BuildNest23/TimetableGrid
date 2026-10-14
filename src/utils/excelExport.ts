@@ -1,3 +1,4 @@
+import { formatPeriodsDW, periodsHeading } from './periodsDW';
 import { TimetableData, DAY_NAMES } from '../types/timetable';
 
 declare global {
@@ -608,7 +609,7 @@ export async function exportTimetableToExcel(
       { v: "Grade", style: 4 },
       { v: "Designation", style: 4 },
       { v: "Incharge of", style: 4 },
-      { v: "Periods / week", style: 4 }
+      { v: periodsHeading(data.periodsDisplay), style: 4 }
     ]);
     data.teachers.forEach(t => {
       const info = data.teacherInfo[t] || { qual: "", rank: "", desig: "" };
@@ -619,7 +620,7 @@ export async function exportTimetableToExcel(
         { v: info.rank || "—", style: 5 },
         { v: info.desig || "—", style: 5 },
         { v: incharge || "—", style: 5 },
-        { v: String(teacherTotalPeriods(t)), style: 5 }
+        { v: formatPeriodsDW(teacherTotalPeriods(t), data.daysPerWeek, data.periodsDisplay), style: 5 }
       ]);
     });
     sheetsSpec.push({ name: "Teachers Roster", rows: rosterRows, numCols: numColsRoster, merges: mergeTitleRows(numColsRoster) });
@@ -734,9 +735,9 @@ export async function exportTimetableToExcel(
 
         rows.push([
           { v: "Period " + p + " — " + assignments.join(", "), style: 5 },
-          { v: best ? `${best.teacher} (${best.score} loads)` : "No free teacher", style: 5 },
+          { v: best ? `${best.teacher} (${formatPeriodsDW(best.score, data.daysPerWeek, data.periodsDisplay)})` : "No free teacher", style: 5 },
           { v: groupText, style: 5 },
-          { v: ranked.map(x => `${x.teacher} (${x.score})`).join(", ") || "—", style: 5 }
+          { v: ranked.map(x => `${x.teacher} (${formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay)})`).join(", ") || "—", style: 5 }
         ]);
       });
 

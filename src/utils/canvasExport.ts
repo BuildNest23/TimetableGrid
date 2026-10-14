@@ -1,3 +1,4 @@
+import { formatPeriodsDW, periodsHeading } from './periodsDW';
 import { TimetableData } from '../types/timetable';
 
 declare global {
@@ -228,7 +229,7 @@ export async function createTimetableCanvas(
       ctx.textBaseline = "middle"; ctx.textAlign = "center";
       drawPageHeader(ctx, totalW, pad, headerH, "Teachers Roster");
       let y = pad + headerH, x = pad;
-      const headers = ["Teacher", "Group", "Grade", "Designation", "Incharge of", "Periods/week"];
+      const headers = ["Teacher", "Group", "Grade", "Designation", "Incharge of", periodsHeading(data.periodsDisplay)];
       const widths = [nameW, qualW, rankW, desigW, inchargeW, loadW];
       ctx.fillStyle = "#EFEBE2"; ctx.fillRect(pad, y, totalW - pad * 2, headRowH);
       ctx.strokeStyle = "#000"; ctx.lineWidth = 1;
@@ -244,7 +245,7 @@ export async function createTimetableCanvas(
         ctx.fillRect(pad, y, totalW - pad * 2, rowH);
         const info = data.teacherInfo[t] || { qual: "", rank: "", desig: "" };
         const incharge = data.classes.filter(c => c[1] === t).map(c => c[0]).join(", ");
-        const cells = [t, info.qual || "—", info.rank || "—", info.desig || "—", incharge || "—", String(options.teacherTotalPeriods(t))];
+        const cells = [t, info.qual || "—", info.rank || "—", info.desig || "—", incharge || "—", formatPeriodsDW(options.teacherTotalPeriods(t), data.daysPerWeek, data.periodsDisplay)];
         cells.forEach((v, i) => {
           ctx.strokeRect(x, y, widths[i], rowH);
           ctx.fillStyle = "#111"; ctx.font = `700 12px ${F}`;
@@ -434,7 +435,7 @@ export async function createTimetableCanvas(
             const best = ranked[0];
             if (best) prior[best.t] = (prior[best.t] || 0) + 1;
             ctx.fillStyle = "#111"; ctx.font = `700 12px ${F}`;
-            drawCentered(ctx, best ? `${best.t} (${best.s})` : "None", x + recW / 2, y + rowH / 2, recW - 10, 13);
+            drawCentered(ctx, best ? `${best.t} (${formatPeriodsDW(best.s, data.daysPerWeek, data.periodsDisplay)})` : "None", x + recW / 2, y + rowH / 2, recW - 10, 13);
           }
           x += recW;
         }
@@ -466,7 +467,7 @@ export async function createTimetableCanvas(
         if (!assignments.length) {
           drawLeft(ctx, "Absent teacher is free", x + 12, y + rowH / 2, freeW - 24, 13);
         } else {
-          const ranked = free.map(t => `${t} (${options.teacherTotalPeriods(t)})`).join(", ");
+          const ranked = free.map(t => `${t} (${formatPeriodsDW(options.teacherTotalPeriods(t), data.daysPerWeek, data.periodsDisplay)})`).join(", ");
           drawLeft(ctx, ranked || "No teachers free", x + 12, y + rowH / 2, freeW - 24, 13);
         }
 

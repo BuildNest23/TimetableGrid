@@ -1,3 +1,4 @@
+import { formatPeriodsDW, periodsHeading } from './periodsDW';
 import { TimetableData, ClassItem } from '../types/timetable';
 import { esc, wholeSchoolCellLines, cellTextForDay } from './printHtml';
 import { dateKey } from './dates';
@@ -634,7 +635,7 @@ function buildSectionGroups(
       <th style="width:12%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">GRADE</th>
       <th style="width:16%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">DESIGNATION</th>
       <th style="width:20%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">INCHARGE OF</th>
-      <th style="width:14%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">PERIODS/WK</th>
+      <th style="width:14%; text-align:center; padding:3px 4px; ${thBorder} font-size:${fontPt}pt;">${periodsHeading(data.periodsDisplay).toUpperCase()}</th>
     </tr>
   `;
 
@@ -658,7 +659,7 @@ function buildSectionGroups(
             <td style="${cStyle}">${esc(info.rank || '—')}</td>
             <td style="${cStyle}">${esc(info.desig || '—')}</td>
             <td style="${cStyle}">${esc(incharge || '—')}</td>
-            <td style="${cStyle}">${totalPeriods}</td>
+            <td style="${cStyle}">${formatPeriodsDW(totalPeriods, data.daysPerWeek, data.periodsDisplay)}</td>
           </tr>
         `;
       }
