@@ -114,10 +114,55 @@ export const TeachersRosterView: React.FC = () => {
         </div>
       </div>
 
-      {/* Roster Table */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-xs">
+      {/* Roster Cards (phones) */}
+      <div className="sm:hidden space-y-2.5">
+        {data.teachers.map(t => {
+          const info = data.teacherInfo[t] || { qual: "", rank: "", desig: "" };
+          const incharge = data.classes.filter(c => c[1] === t).map(c => c[0]).join(", ");
+          const total = getTeacherTotalPeriods(t);
+          const tags = [info.qual, info.rank, info.desig].filter(Boolean);
+          return (
+            <div
+              key={t}
+              className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-xs px-4 py-3 flex items-start justify-between gap-3"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold text-stone-900 dark:text-stone-100 leading-snug">{t}</div>
+                {tags.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {tags.map((tag, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-[11px] font-semibold text-stone-600 dark:text-stone-300"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {incharge && (
+                  <div className="mt-1.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400">
+                    Incharge: {incharge}
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 text-center bg-emerald-50 dark:bg-emerald-950/40 rounded-xl px-2.5 py-1.5">
+                <div className="font-mono font-bold text-sm text-emerald-800 dark:text-emerald-400 tabular-nums">
+                  {formatPeriodsDW(total, data.daysPerWeek, data.periodsDisplay)}
+                </div>
+                <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-700/70 dark:text-emerald-400/70">
+                  {periodsHeading(data.periodsDisplay).replace('Periods', '').replace(/^[ /]/, '')}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Roster Table (tablet / desktop) */}
+      <div className="hidden sm:block bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-xs border-collapse [&_th]:whitespace-nowrap [&_th]:px-3 [&_td]:px-3">
             <thead className="bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-800">
               <tr>
                 <th className="py-3 px-4 font-bold text-stone-700 dark:text-stone-300">Teacher</th>
