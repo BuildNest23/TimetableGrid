@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useTimetable } from '../context/TimetableContext';
 import { ActiveTab } from '../types/timetable';
 import { dateKey } from '../utils/dates';
@@ -113,6 +113,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   // If user hasn't overridden, follow live period
   const effectivePeriodIndex = selectedPeriodIndex !== null ? selectedPeriodIndex : liveStatus.activePeriodIndex;
   const isViewingLive = selectedPeriodIndex === null || selectedPeriodIndex === liveStatus.activePeriodIndex;
+
+  // Auto-scroll the P1..Pn chip row so the running / selected period is always visible (mobile)
+  const periodChipsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const row = periodChipsRef.current;
+    if (!row || effectivePeriodIndex < 0) return;
+    const chip = row.querySelector<HTMLElement>(`[data-period-index="${effectivePeriodIndex}"]`);
+    if (!chip) return;
+    const target = chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2;
+    row.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+  }, [effectivePeriodIndex, data.periods.length]);
 
   const currentDayIndex = useMemo(() => getSchoolDayIndex(now), [now]);
   const daySchedule = useMemo(() => getDaySchedule(data, currentDayIndex), [data, currentDayIndex]);
@@ -336,7 +347,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+          <div ref={periodChipsRef} className="relative flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
             {/* Live indicator chip */}
             <button
               type="button"
@@ -360,6 +371,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
               return (
                 <button
                   key={pNum}
+                  data-period-index={pi}
                   type="button"
                   onClick={() => setSelectedPeriodIndex(pi)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition cursor-pointer flex flex-col items-center border relative ${
