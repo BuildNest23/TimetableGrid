@@ -185,6 +185,39 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
     }
   };
 
+  // Clears only the scheduled periods of every class. Teachers, subjects, classes,
+  // incharges and all other settings are kept, so a new timetable can be started quickly.
+  const handleResetTimetable = () => {
+    setConfirmState({
+      isOpen: true,
+      options: {
+        title: "Reset Timetable?",
+        message: "This clears all assigned subjects and teachers from every class timetable. Your teachers, subjects and classes are NOT deleted.",
+        danger: true,
+        confirmText: "Reset Timetable"
+      },
+      action: () => {
+        updateData(prev => ({
+          ...prev,
+          classes: prev.classes.map(c => [
+            c[0],
+            c[1],
+            c[2],
+            prev.periods.map(() => ""),
+            prev.periods.map(() => ""),
+            prev.periods.map(() => null)
+          ] as ClassItem),
+          conflictExceptions: []
+        }));
+        setSubjectDraft("");
+        setTeacherDraft("");
+        setSlot2Draft(null);
+        setShow2ndSlot(false);
+        setSelectedPeriodIdx(0);
+      }
+    });
+  };
+
   const handleClearPeriod = (pi: number) => {
     setConfirmState({
       isOpen: true,
@@ -299,6 +332,15 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
           <span>Full Grid View</span>
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={handleResetTimetable}
+        className="w-full min-h-[40px] py-2 px-3 flex items-center justify-center gap-2 rounded-xl text-xs font-bold bg-white dark:bg-stone-900 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+      >
+        <RotateCcw className="w-4 h-4" />
+        <span>Reset Timetable (keeps teachers &amp; subjects)</span>
+      </button>
 
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         {data.classes.map((c, i) => (
