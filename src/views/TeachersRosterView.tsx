@@ -18,11 +18,11 @@ export const TeachersRosterView: React.FC = () => {
       const incharge = data.classes.filter(c => c[1] === t).map(c => c[0]).join(", ");
       return `
         <tr>
-          <td style="padding: 7px; border: 1px solid #000; font-weight: bold; text-align: left;">${t}</td>
+          <td style="padding: 7px; border: 1px solid #000; font-weight: bold; text-align: center;">${t}</td>
           <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.qual || "—"}</td>
           <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.rank || "—"}</td>
           <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.desig || "—"}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: left;">${incharge || "—"}</td>
+          <td style="padding: 7px; border: 1px solid #000; text-align: center;">${incharge || "—"}</td>
           <td style="padding: 7px; border: 1px solid #000; text-align: center; font-weight: bold;">${getTeacherTotalPeriods(t)}</td>
         </tr>
       `;
@@ -40,11 +40,11 @@ export const TeachersRosterView: React.FC = () => {
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
           <thead>
             <tr style="background: #e5e7eb;">
-              <th style="width: 24%; padding: 7px; border: 1px solid #000; text-align: left;">Teacher</th>
+              <th style="width: 24%; padding: 7px; border: 1px solid #000; text-align: center;">Teacher</th>
               <th style="width: 14%; padding: 7px; border: 1px solid #000;">Group</th>
               <th style="width: 12%; padding: 7px; border: 1px solid #000;">Grade</th>
               <th style="width: 16%; padding: 7px; border: 1px solid #000;">Designation</th>
-              <th style="width: 20%; padding: 7px; border: 1px solid #000; text-align: left;">Incharge Of</th>
+              <th style="width: 20%; padding: 7px; border: 1px solid #000; text-align: center;">Incharge Of</th>
               <th style="width: 14%; padding: 7px; border: 1px solid #000;">Periods/Wk</th>
             </tr>
           </thead>
