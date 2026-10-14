@@ -51,6 +51,8 @@ export interface FridayTimings {
   combined: boolean;
 }
 
+export type PeriodsDisplay = 'day' | 'week' | 'both';
+
 export interface TimetableData {
   schoolName: string;
   academicYear: string;
@@ -81,6 +83,7 @@ export interface TimetableData {
   substituteRecommendWorkload: boolean;
   substituteRecommendGroup: boolean;
   hideEmptyTeachersInTT: boolean;
+  periodsDisplay: PeriodsDisplay;
   printSize: 'xs' | 's' | 'm' | 'l' | 'xl';
   printOrientation: 'landscape' | 'portrait';
   printFontPt?: number;
@@ -155,6 +158,7 @@ export const EMPTY_TIMETABLE_DATA: TimetableData = {
   substituteRecommendWorkload: true,
   substituteRecommendGroup: true,
   hideEmptyTeachersInTT: false,
+  periodsDisplay: 'both',
   printSize: 'm',
   printOrientation: 'landscape',
   printFontPt: 7.5,
