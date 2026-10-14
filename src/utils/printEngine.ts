@@ -235,7 +235,7 @@ export function buildTitleBlockHtml(
   const metaLine = [data.academicYear, data.printNote].filter(Boolean).join(' · ');
 
   return `
-    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:8px; padding-bottom:6px;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:8px; padding-bottom:6px;">
       ${logoImgHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
@@ -991,7 +991,7 @@ export function buildClassCardHTML(
   const metaLine = [inchargePart, data.academicYear, timings.cardSubtitle].filter(Boolean).join(' · ');
 
   const titleBlockHtml = `
-    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
       ${logoHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
@@ -1156,7 +1156,7 @@ export function buildTeacherCardHTML(
   const timingNoteLine = timings.cardSubtitle;
 
   const titleBlockHtml = `
-    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
       ${logoHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
@@ -1317,7 +1317,7 @@ export function buildPeriodCardHTML(
   ].filter(Boolean);
 
   const titleBlockHtml = `
-    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
+    <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
       ${logoHtml}
       <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:${(fontPt * 2.2).toFixed(1)}pt; font-weight:700; margin:0; line-height:1.15; color:#000;">
         ${esc(data.schoolName || 'School Timetable')}
