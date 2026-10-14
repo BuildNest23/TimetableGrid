@@ -1,3 +1,4 @@
+import { formatPeriodsDW, periodsHeading } from '../utils/periodsDW';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useTimetable } from '../context/TimetableContext';
 import { ActiveTab } from '../types/timetable';
@@ -874,7 +875,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                     <tr>
                       <th className="py-2.5 px-4 font-bold text-stone-700 dark:text-stone-300">Teacher</th>
                       <th className="py-2.5 px-4 font-bold text-stone-700 dark:text-stone-300">Group / Grade</th>
-                      <th className="py-2.5 px-4 font-bold text-stone-700 dark:text-stone-300 text-right">Periods / Week</th>
+                      <th className="py-2.5 px-4 font-bold text-stone-700 dark:text-stone-300 text-right">{periodsHeading(data.periodsDisplay)}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100 dark:divide-stone-800/60">
@@ -888,7 +889,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                             {[info.rank, info.qual].filter(Boolean).join(' · ') || '—'}
                           </td>
                           <td className="py-2 px-4 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 tabular-nums">
-                            {count}
+                            {formatPeriodsDW(count, data.daysPerWeek, data.periodsDisplay)}
                           </td>
                         </tr>
                       );

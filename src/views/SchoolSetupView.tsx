@@ -888,6 +888,24 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
 
           <div>
             <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+              Show Teacher Periods
+            </label>
+            <select
+              value={data.periodsDisplay || 'both'}
+              onChange={(e) => {
+                const v = e.target.value as 'day' | 'week' | 'both';
+                updateData(prev => ({ ...prev, periodsDisplay: v }), true);
+              }}
+              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100"
+            >
+              <option value="day">Per Day (Periods D)</option>
+              <option value="week">Per Week (Periods W)</option>
+              <option value="both">Both, e.g. 3/15 (Periods D/W)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
               Number of Periods
             </label>
             <select

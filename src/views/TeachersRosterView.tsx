@@ -3,6 +3,7 @@ import { useTimetable } from '../context/TimetableContext';
 import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExport';
 import { triggerPrint } from '../utils/printUtils';
 import { Users, Printer, Download, Share2 } from 'lucide-react';
+import { formatPeriodsDW, periodsHeading } from '../utils/periodsDW';
 
 export const TeachersRosterView: React.FC = () => {
   const {
@@ -23,7 +24,7 @@ export const TeachersRosterView: React.FC = () => {
           <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.rank || "—"}</td>
           <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.desig || "—"}</td>
           <td style="padding: 7px; border: 1px solid #000; text-align: center;">${incharge || "—"}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: center; font-weight: bold;">${getTeacherTotalPeriods(t)}</td>
+          <td style="padding: 7px; border: 1px solid #000; text-align: center; font-weight: bold;">${formatPeriodsDW(getTeacherTotalPeriods(t), data.daysPerWeek, data.periodsDisplay)}</td>
         </tr>
       `;
     }).join("");
@@ -45,7 +46,7 @@ export const TeachersRosterView: React.FC = () => {
               <th style="width: 12%; padding: 7px; border: 1px solid #000;">Grade</th>
               <th style="width: 16%; padding: 7px; border: 1px solid #000;">Designation</th>
               <th style="width: 20%; padding: 7px; border: 1px solid #000; text-align: center;">Incharge Of</th>
-              <th style="width: 14%; padding: 7px; border: 1px solid #000;">Periods/Wk</th>
+              <th style="width: 14%; padding: 7px; border: 1px solid #000;">${periodsHeading(data.periodsDisplay)}</th>
             </tr>
           </thead>
           <tbody>
@@ -124,7 +125,7 @@ export const TeachersRosterView: React.FC = () => {
                 <th className="py-3 px-4 font-bold text-stone-700 dark:text-stone-300">Grade</th>
                 <th className="py-3 px-4 font-bold text-stone-700 dark:text-stone-300">Designation</th>
                 <th className="py-3 px-4 font-bold text-stone-700 dark:text-stone-300">Incharge Of</th>
-                <th className="py-3 px-4 font-bold text-stone-700 dark:text-stone-300 text-right">Periods / Week</th>
+                <th className="py-3 px-4 font-bold text-stone-700 dark:text-stone-300 text-right">{periodsHeading(data.periodsDisplay)}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800/60">
@@ -141,7 +142,7 @@ export const TeachersRosterView: React.FC = () => {
                     <td className="py-3 px-4 text-stone-600 dark:text-stone-400">{info.desig || "—"}</td>
                     <td className="py-3 px-4 font-medium text-stone-700 dark:text-stone-300">{incharge || "—"}</td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 tabular-nums">
-                      {total}
+                      {formatPeriodsDW(total, data.daysPerWeek, data.periodsDisplay)}
                     </td>
                   </tr>
                 );

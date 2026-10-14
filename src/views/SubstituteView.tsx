@@ -1,3 +1,4 @@
+import { formatPeriodsDW } from '../utils/periodsDW';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTimetable } from '../context/TimetableContext';
 import { DAY_NAMES } from '../types/timetable';
@@ -235,9 +236,9 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
         period: p,
         info: assignments.join(", "),
         isFree: false,
-        bestWorkload: best ? `${best.teacher} (${best.score} loads)` : "No free teacher",
+        bestWorkload: best ? `${best.teacher} (${formatPeriodsDW(best.score, data.daysPerWeek, data.periodsDisplay)})` : "No free teacher",
         groupMatches: rankedByGroup.slice(0, 4),
-        freeTeachers: rankedByWorkload.map(x => `${x.teacher} (${x.score})`)
+        freeTeachers: rankedByWorkload.map(x => `${x.teacher} (${formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay)})`)
       };
     });
   }, [
