@@ -160,7 +160,7 @@ export function wholeSchoolHTML(
       return `<td><div style="line-height:1.2; text-align:center; font-size:0.9em;"><div style="font-weight:700;">${esc(lines[0])}</div><div style="font-style:italic; color:#333; margin-top:1px;">${esc(lines[1])}</div></div></td>${breakExtra}`;
     }).join('');
 
-    return `${sectionRow}<tr><th style="font-family:Georgia, 'Times New Roman', serif; text-align:left;">${esc(c[0])}</th><td style="font-style:italic;">${esc(c[1] || '—')}</td>${cells}</tr>`;
+    return `${sectionRow}<tr><th style="font-family:Georgia, 'Times New Roman', serif; text-align:center;">${esc(c[0])}</th><td style="font-style:italic;">${esc(c[1] || '—')}</td>${cells}</tr>`;
   }).join('');
 
   return `
@@ -212,7 +212,7 @@ export function allTeachersHTML(
 
     return `
       <tr>
-        <th style="font-family:Georgia, 'Times New Roman', serif; text-align:left;">${esc(t)}</th>
+        <th style="font-family:Georgia, 'Times New Roman', serif; text-align:center;">${esc(t)}</th>
         ${cells}
       </tr>
     `;
@@ -255,7 +255,7 @@ export function classWiseHTML(data: TimetableData, c: ClassItem): string {
         cells += `<td class="break-cell" style="width:14px; min-width:14px; max-width:14px; padding:0;"></td>`;
       }
     });
-    return `<tr><th style="font-family:Georgia, 'Times New Roman', serif; text-align:left;">${esc(d)}</th>${cells}</tr>`;
+    return `<tr><th style="font-family:Georgia, 'Times New Roman', serif; text-align:center;">${esc(d)}</th>${cells}</tr>`;
   }).join('');
 
   const inchargePart = c[1] ? ` — Incharge: ${c[1]}` : '';
@@ -280,8 +280,8 @@ export function teacherHTML(
 ): string {
   const rows = data.periods.map((p, i) => `
     <tr>
-      <th style="width:25%; font-family:Georgia, 'Times New Roman', serif; text-align:left;">Period ${p}</th>
-      <td style="text-align:left; font-weight:700; padding-left:12px;">${esc(teacherPeriodSummary(t, i))}</td>
+      <th style="width:25%; font-family:Georgia, 'Times New Roman', serif; text-align:center;">Period ${p}</th>
+      <td style="text-align:center; font-weight:700; ">${esc(teacherPeriodSummary(t, i))}</td>
     </tr>
   `).join('');
 
@@ -345,9 +345,9 @@ export function rosterHTML(data: TimetableData, teacherTotalPeriods: (t: string)
 
 /* ---------- Free Staff ---------- */
 export function freeStaffHTML(data: TimetableData, rows: { period: number; text: string }[]): string {
-  const head = `<tr><th style="width:22%">Period</th><th style="text-align:left">Free Teachers</th></tr>`;
+  const head = `<tr><th style="width:22%">Period</th><th style="text-align:center">Free Teachers</th></tr>`;
   const bodyRows = rows.map(r => `
-    <tr><th>Period ${r.period}</th><td style="text-align:left">${esc(r.text)}</td></tr>
+    <tr><th>Period ${r.period}</th><td style="text-align:center">${esc(r.text)}</td></tr>
   `).join('');
   return `
     <div class="print-sheet fixed-sheet freestaff-sheet">
