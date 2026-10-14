@@ -988,7 +988,7 @@ export function buildClassCardHTML(
     : '';
 
   const inchargePart = targetClass[1] ? `Incharge: ${targetClass[1]}` : '';
-  const metaLine = [inchargePart, data.academicYear, timings.cardSubtitle].filter(Boolean).join(' · ');
+  const metaLine = [inchargePart, data.academicYear].filter(Boolean).join(' · ');
 
   const titleBlockHtml = `
     <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
@@ -1153,7 +1153,7 @@ export function buildTeacherCardHTML(
     currentTeacher
   ].filter(Boolean);
 
-  const timingNoteLine = timings.cardSubtitle;
+  const timingNoteLine = '';
 
   const titleBlockHtml = `
     <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
@@ -1312,7 +1312,6 @@ export function buildPeriodCardHTML(
 
   const timingNoteParts = [
     timeLine,
-    timings.cardSubtitle,
     data.academicYear
   ].filter(Boolean);
 
