@@ -115,7 +115,7 @@ export const FreeStaffView: React.FC = () => {
     triggerPrint(content, { orientation: 'landscape', printSize: 'm' });
   };
 
-  const handleExportImage = async (share = false) => {
+  const handleExportImage = async (_share = false) => {
     const canvas = await createTimetableCanvas('freestaff', data, {
       teacherPeriodSummary,
       teacherTotalPeriods: getTeacherTotalPeriods,

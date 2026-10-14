@@ -1,11 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   TimetableData,
   EMPTY_TIMETABLE_DATA,
   Slot2,
-  ConflictException,
   LongLeave,
-  TeacherInfo,
   DAY_NAMES
 } from '../types/timetable';
 
@@ -106,6 +104,71 @@ function normalize(raw: Partial<TimetableData>): TimetableData {
   return base;
 }
 
+/**
+ * Shared helper: calculates teaching periods for a teacher on a given weekday.
+ * - rotation: slot 1 teacher on non-rotation days, slot 2 teacher on listed days
+ * - parallel: both teachers every day
+ * - same: once per class
+ * - deliberate overlap (covered by conflictExceptions): counts once
+ */
+export function getTeacherPeriodsForDay(data: TimetableData, teacher: string, dayIndex: number): number {
+  if (dayIndex < 0 || dayIndex >= data.daysPerWeek || !teacher) return 0;
+  let total = 0;
+
+  for (let pi = 0; pi < data.periods.length; pi++) {
+    const activeClasses: string[] = [];
+
+    data.classes.forEach(c => {
+      const className = c[0];
+      const t1 = c[4]?.[pi];
+      const s2 = c[5]?.[pi];
+
+      if (s2 && s2.mode === 'rotation') {
+        const slot2Active = Array.isArray(s2.days) && s2.days.includes(dayIndex);
+        if (!slot2Active && t1 === teacher) {
+          activeClasses.push(className);
+        } else if (slot2Active && s2.teacher === teacher) {
+          activeClasses.push(className);
+        }
+        return;
+      }
+
+      if (s2 && s2.mode === 'same') {
+        const combinedTeacher = t1 || s2.teacher;
+        if (combinedTeacher === teacher) {
+          activeClasses.push(className);
+        }
+        return;
+      }
+
+      // parallel or no slot 2
+      if (t1 === teacher) {
+        activeClasses.push(className);
+      }
+      if (s2 && s2.teacher === teacher) {
+        activeClasses.push(className);
+      }
+    });
+
+    if (activeClasses.length === 0) continue;
+    if (activeClasses.length === 1) {
+      total += 1;
+      continue;
+    }
+
+    // Deliberate overlap check: if covered by conflictExceptions for this day & period, counts as 1
+    const isCovered = (data.conflictExceptions || []).some(ex => {
+      if (ex.period !== pi || ex.teacher !== teacher || !ex.days.includes(dayIndex)) return false;
+      if (ex.classes.length !== activeClasses.length) return false;
+      return ex.classes.every(cn => activeClasses.includes(cn));
+    });
+
+    total += isCovered ? 1 : activeClasses.length;
+  }
+
+  return total;
+}
+
 export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [data, setData] = useState<TimetableData>(() => {
     try {
@@ -126,22 +189,42 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return EMPTY_TIMETABLE_DATA;
   });
 
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
   const [historyStack, setHistoryStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [storageNotice, setStorageNotice] = useState<string | null>(null);
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem('utDarkMode') === '1';
+    try {
+      return localStorage.getItem('utDarkMode') === '1';
+    } catch {
+      return false;
+    }
   });
 
+  const notifyStorageError = useCallback((e: unknown) => {
+    console.error("Storage error:", e);
+    const isFull = e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
+    setStorageNotice(isFull ? "Browser storage is full. Please export a backup to free up space." : "Storage operation failed.");
+    setTimeout(() => setStorageNotice(null), 5000);
+  }, []);
+
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.body.classList.remove('dark');
+    try {
+      if (darkMode) {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark');
+      }
+      localStorage.setItem('utDarkMode', darkMode ? '1' : '0');
+    } catch (e) {
+      console.warn("Dark mode storage failed:", e);
     }
-    localStorage.setItem('utDarkMode', darkMode ? '1' : '0');
   }, [darkMode]);
 
   const toggleDarkMode = useCallback(() => {
@@ -154,134 +237,94 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return () => clearTimeout(timer);
   }, []);
 
+  // Pure updater: computes next outside the updater, updates storage and history outside
   const updateData = useCallback((updater: (prev: TimetableData) => TimetableData, silent = false) => {
-    setData(prev => {
-      const nextRaw = updater(prev);
-      const next = normalize(nextRaw);
-      const prevStr = JSON.stringify(prev);
-      const nextStr = JSON.stringify(next);
+    const prev = dataRef.current;
+    const nextRaw = updater(prev);
+    const next = normalize(nextRaw);
+    const prevStr = JSON.stringify(prev);
+    const nextStr = JSON.stringify(next);
 
-      if (prevStr !== nextStr) {
-        setHistoryStack(hs => {
-          const newStack = [...hs, prevStr];
-          if (newStack.length > MAX_HISTORY) newStack.shift();
-          return newStack;
-        });
-        setRedoStack([]);
+    if (prevStr !== nextStr) {
+      setData(next);
 
-        try {
-          localStorage.setItem(STORAGE_KEY, nextStr);
-          if (!silent) {
-            localStorage.setItem('utLastSaved', String(Date.now()));
-            triggerSaveIndicator();
-          }
-        } catch (e) {
-          console.error("Storage save failed:", e);
+      setHistoryStack(hs => {
+        const newStack = [...hs, prevStr];
+        if (newStack.length > MAX_HISTORY) newStack.shift();
+        return newStack;
+      });
+      setRedoStack([]);
+
+      try {
+        localStorage.setItem(STORAGE_KEY, nextStr);
+        if (!silent) {
+          localStorage.setItem('utLastSaved', String(Date.now()));
+          triggerSaveIndicator();
         }
+      } catch (e) {
+        notifyStorageError(e);
       }
-      return next;
-    });
-  }, [triggerSaveIndicator]);
+    }
+  }, [triggerSaveIndicator, notifyStorageError]);
 
   const undo = useCallback(() => {
     if (!historyStack.length) return;
     const prevStr = historyStack[historyStack.length - 1];
     setHistoryStack(hs => hs.slice(0, -1));
-    setRedoStack(rs => [...rs, JSON.stringify(data)]);
-    const restored = normalize(JSON.parse(prevStr));
-    setData(restored);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
-    triggerSaveIndicator();
-  }, [historyStack, data, triggerSaveIndicator]);
+    setRedoStack(rs => [...rs, JSON.stringify(dataRef.current)]);
+    try {
+      const restored = normalize(JSON.parse(prevStr));
+      setData(restored);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      triggerSaveIndicator();
+    } catch (e) {
+      notifyStorageError(e);
+    }
+  }, [historyStack, triggerSaveIndicator, notifyStorageError]);
 
   const redo = useCallback(() => {
     if (!redoStack.length) return;
     const nextStr = redoStack[redoStack.length - 1];
     setRedoStack(rs => rs.slice(0, -1));
-    setHistoryStack(hs => [...hs, JSON.stringify(data)]);
-    const restored = normalize(JSON.parse(nextStr));
-    setData(restored);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
-    triggerSaveIndicator();
-  }, [redoStack, data, triggerSaveIndicator]);
-
-  // Load map: total weekly periods per teacher.
-  // For "same" mode both subjects share one teacher — count once, not twice.
-  const loadMap = useMemo(() => {
-    const m: Record<string, number> = {};
-    data.teachers.forEach(t => { m[t] = 0; });
-
-    for (let pi = 0; pi < data.periods.length; pi++) {
-      const byTeacher: Record<string, Set<number>> = {};
-      data.classes.forEach((c, ci) => {
-        const t1 = c[4][pi];
-        const s2 = c[5] ? c[5][pi] : null;
-
-        if (t1) {
-          if (!byTeacher[t1]) byTeacher[t1] = new Set();
-          byTeacher[t1].add(ci);
-        }
-        if (s2 && s2.teacher && s2.mode !== 'same') {
-          if (!byTeacher[s2.teacher]) byTeacher[s2.teacher] = new Set();
-          byTeacher[s2.teacher].add(ci);
-        }
-      });
-
-      for (const t in byTeacher) {
-        const set = byTeacher[t];
-        if (set.size === 0) continue;
-        if (set.size === 1) {
-          m[t] = (m[t] || 0) + 1;
-          continue;
-        }
-        const names = Array.from(set).map(ci => data.classes[ci][0]);
-        const covered = (data.conflictExceptions || []).some(
-          ex => ex.period === pi && ex.teacher === t && ex.classes.length === names.length && ex.classes.every(cn => names.includes(cn))
-        );
-        m[t] = (m[t] || 0) + (covered ? 1 : set.size);
-      }
+    setHistoryStack(hs => [...hs, JSON.stringify(dataRef.current)]);
+    try {
+      const restored = normalize(JSON.parse(nextStr));
+      setData(restored);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      triggerSaveIndicator();
+    } catch (e) {
+      notifyStorageError(e);
     }
-    return m;
-  }, [data.teachers, data.classes, data.periods.length, data.conflictExceptions]);
+  }, [redoStack, triggerSaveIndicator, notifyStorageError]);
 
-  const getTeacherTotalPeriods = useCallback((teacher: string) => {
-    return loadMap[teacher] || 0;
-  }, [loadMap]);
+  // Shared workload map: guaranteed weekly sum equals sum of daily counts
+  const teacherWorkloadMap = useMemo(() => {
+    const dailyMap: Record<number, Record<string, number>> = {};
+    const weeklyMap: Record<string, number> = {};
 
-  // Count how many periods this teacher teaches on a given weekday.
-  // - rotation: only slot2 teacher teaches on the listed days (slot1 teacher teaches the other days)
-  // - parallel: both teachers teach every day
-  // - same:     same teacher teaches the combined subject — count once per class
-  const getTeacherPeriodsOnDay = useCallback((teacher: string, dayIndex: number) => {
-    if (dayIndex < 0 || dayIndex >= data.daysPerWeek) return 0;
-    let n = 0;
-    data.classes.forEach((c) => {
-      for (let pi = 0; pi < data.periods.length; pi++) {
-        const t1 = c[4][pi];
-        const s2 = c[5] ? c[5][pi] : null;
-
-        if (s2 && s2.mode === 'rotation') {
-          const slot2Active = s2.days.includes(dayIndex);
-          if (!slot2Active && t1 === teacher) { n++; continue; }
-          if (slot2Active && s2.teacher === teacher) { n++; continue; }
-          continue;
-        }
-
-        if (s2 && s2.mode === 'same') {
-          // Same-teacher mode: teacher teaches every day —
-          // slot1's subject on non-listed days, slot2's subject on listed days.
-          const combinedTeacher = t1 || s2.teacher;
-          if (combinedTeacher === teacher) n++;
-          continue;
-        }
-
-        // parallel or no slot2
-        if (t1 === teacher) { n++; continue; }
-        if (s2 && s2.teacher === teacher) { n++; continue; }
-      }
+    data.teachers.forEach(t => {
+      weeklyMap[t] = 0;
     });
-    return n;
-  }, [data.daysPerWeek, data.classes, data.periods.length]);
+
+    for (let d = 0; d < data.daysPerWeek; d++) {
+      dailyMap[d] = {};
+      data.teachers.forEach(t => {
+        const dayCount = getTeacherPeriodsForDay(data, t, d);
+        dailyMap[d][t] = dayCount;
+        weeklyMap[t] = (weeklyMap[t] || 0) + dayCount;
+      });
+    }
+
+    return { dailyMap, weeklyMap };
+  }, [data]);
+
+  const getTeacherPeriodsOnDay = useCallback((teacher: string, dayIndex: number): number => {
+    return teacherWorkloadMap.dailyMap[dayIndex]?.[teacher] ?? getTeacherPeriodsForDay(data, teacher, dayIndex);
+  }, [teacherWorkloadMap, data]);
+
+  const getTeacherTotalPeriods = useCallback((teacher: string): number => {
+    return teacherWorkloadMap.weeklyMap[teacher] ?? 0;
+  }, [teacherWorkloadMap]);
 
   const computeConflicts = useCallback(() => {
     return data.periods.map((_, pi) => {
@@ -348,173 +391,112 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const collectTimetableIssues = useCallback((): TimetableIssue[] => {
     const issues: TimetableIssue[] = [];
-    data.classes.forEach(c => {
-      data.periods.forEach((p, i) => {
-        const sub = (c[3][i] || "").trim();
-        const tea = (c[4][i] || "").trim();
-        if (!sub && !tea) {
-          issues.push({ level: 'warn', kind: 'empty', text: `${c[0]} · Period ${p}: no subject or teacher assigned.` });
-        } else if (!sub) {
-          issues.push({ level: 'warn', kind: 'no-subject', text: `${c[0]} · Period ${p}: teacher "${tea}" set, but no subject.` });
-        } else if (!tea) {
-          issues.push({ level: 'warn', kind: 'no-teacher', text: `${c[0]} · Period ${p}: subject "${sub}" set, but no teacher.` });
-        }
 
-        const s2 = c[5] ? c[5][i] : null;
-        if (s2) {
-          const s2sub = (s2.subject || "").trim();
-          const s2tea = (s2.teacher || "").trim();
-          if (!s2sub) {
-            issues.push({ level: 'warn', kind: 'slot2-sub', text: `${c[0]} · Period ${p}: 2nd slot has no subject.` });
-          }
-          if (s2.mode !== 'same' && !s2tea) {
-            issues.push({ level: 'warn', kind: 'slot2-tea', text: `${c[0]} · Period ${p}: 2nd subject "${s2sub}" has no teacher.` });
-          }
-          if (s2.mode === 'rotation' && (!Array.isArray(s2.days) || s2.days.length === 0)) {
-            issues.push({ level: 'warn', kind: 'slot2-days', text: `${c[0]} · Period ${p}: rotation slot has no active days.` });
-          }
-        }
-      });
-    });
-
+    // 1. Conflict warnings
     const conflicts = computeConflicts();
-    conflicts.forEach((bad, pi) => {
-      Object.keys(bad).forEach(t => {
-        const info = bad[t];
-        const dayTxt = info.days.map(d => (DAY_NAMES[d] || "").slice(0, 3)).join(", ");
+    conflicts.forEach((pConflicts, pi) => {
+      Object.entries(pConflicts).forEach(([t, item]) => {
+        const dStr = item.days.map(d => DAY_NAMES[d].slice(0, 3)).join(", ");
         issues.push({
-          level: 'error',
-          kind: 'conflict',
+          level: 'warn',
+          kind: 'Conflict',
           period: pi,
           teacher: t,
-          text: `Period ${data.periods[pi]}: ${t} double-booked in ${info.classes.join(", ")} (${dayTxt || 'every day'}).`
+          text: `Period ${data.periods[pi]}: ${t} is double-booked across ${item.classes.join(" + ")} on ${dStr}.`
         });
       });
     });
 
-    data.periodTimes.forEach((pt, i) => {
-      if (!pt.start || !pt.end) {
-        issues.push({ level: 'info', kind: 'time', text: `Period ${data.periods[i]}: time slot not configured.` });
+    // 2. Classes with unassigned slots
+    data.classes.forEach(c => {
+      const emptyCount = c[3].filter(s => !s).length;
+      if (emptyCount > 0) {
+        issues.push({
+          level: 'info',
+          kind: 'Unassigned',
+          text: `${c[0]} has ${emptyCount} unassigned period${emptyCount > 1 ? 's' : ''}.`
+        });
       }
     });
 
-    data.classes.forEach(c => {
-      if (!(c[1] || "").trim()) {
-        issues.push({ level: 'info', kind: 'incharge', text: `${c[0]}: no incharge assigned.` });
+    // 3. Teachers with zero periods
+    data.teachers.forEach(t => {
+      if (getTeacherTotalPeriods(t) === 0) {
+        issues.push({
+          level: 'info',
+          kind: 'Workload',
+          teacher: t,
+          text: `${t} has 0 teaching periods assigned.`
+        });
       }
     });
 
     return issues;
-  }, [data.classes, data.periods, data.periodTimes, computeConflicts]);
+  }, [computeConflicts, data.periods, data.classes, data.teachers, getTeacherTotalPeriods]);
 
-  // Teacher summary — how each period's assignments look for a teacher.
-  // - rotation: only the slot2 teacher teaches on the listed days
-  // - parallel: both teachers teach every day
-  // - same:     same teacher teaches a combined subject (e.g. "Maths/Bio - Mr. X")
   const teacherPeriodSummary = useCallback((teacher: string, periodIndex: number): string => {
-    const map = new Map<string, { subject: string; className: string; days: Set<number> }>();
+    const matches: string[] = [];
+    data.classes.forEach(c => {
+      const t1 = c[4][periodIndex];
+      const s2 = c[5] ? c[5][periodIndex] : null;
 
-    data.classes.forEach((c) => {
-      for (let d = 0; d < data.daysPerWeek; d++) {
-        const t1 = c[4][periodIndex];
-        const s2 = c[5] ? c[5][periodIndex] : null;
+      if (s2 && s2.mode === 'same') {
+        const combined = t1 || s2.teacher;
+        if (combined === teacher) {
+          const sub2 = s2.subject || "—";
+          const sub1 = c[3][periodIndex] || "—";
+          const dayStr = s2.days && s2.days.length > 0 ? ` (${s2.days.map(d => DAY_NAMES[d].slice(0, 3)).join(", ")})` : "";
+          matches.push(`${c[0]}: ${sub1}/${sub2}${dayStr}`);
+        }
+        return;
+      }
 
-        let hit = false;
-        let subj = "";
-
+      if (t1 === teacher) {
+        const sub = c[3][periodIndex] || "—";
         if (s2 && s2.mode === 'rotation') {
-          const slot2Active = s2.days.includes(d);
-          if (slot2Active) {
-            if (s2.teacher === teacher) {
-              hit = true;
-              subj = s2.subject || "—";
-            }
-          } else {
-            if (t1 === teacher) {
-              hit = true;
-              subj = c[3][periodIndex] || "—";
-            }
-          }
-        } else if (s2 && s2.mode === 'same') {
-          // Combined subject taught by the same teacher.
-          // If specific days are set, tag the subject with those days —
-          // e.g. "Urdu/Lib (Mon)" — so it matches the Whole School view.
-          const combinedTeacher = t1 || s2.teacher;
-          if (combinedTeacher === teacher) {
-            hit = true;
-            const sub1 = c[3][periodIndex] || "—";
-            const sub2 = s2.subject || "—";
-            const hasMask = Array.isArray(s2.days) && s2.days.length > 0;
-            if (hasMask) {
-              const dayStr = s2.days
-                .slice()
-                .sort((a, b) => a - b)
-                .map(d => (DAY_NAMES[d] || "").slice(0, 3))
-                .join(", ");
-              subj = `${sub1}/${sub2} (${dayStr})`;
-            } else {
-              subj = `${sub1}/${sub2}`;
-            }
-          }
+          const daysOther = (DAY_NAMES.slice(0, data.daysPerWeek).map((_, i) => i)).filter(d => !s2.days.includes(d));
+          const dayStr = daysOther.length ? ` (${daysOther.map(d => DAY_NAMES[d].slice(0, 3)).join(", ")})` : "";
+          matches.push(`${c[0]}: ${sub}${dayStr}`);
         } else {
-          // parallel or no slot2 — the common case.
-          if (t1 === teacher) {
-            hit = true;
-            subj = c[3][periodIndex] || "—";
-          }
-          if (s2 && s2.teacher === teacher) {
-            const sub2 = s2.subject || "—";
-            if (hit) subj = `${subj}/${sub2}`;
-            else { hit = true; subj = sub2; }
-          }
+          matches.push(`${c[0]}: ${sub}`);
         }
+      }
 
-        if (hit) {
-          const key = `${subj}||${c[0]}`;
-          if (!map.has(key)) {
-            map.set(key, { subject: subj, className: c[0], days: new Set() });
-          }
-          map.get(key)!.days.add(d);
-        }
+      if (s2 && s2.teacher === teacher && s2.mode !== 'same') {
+        const sub = s2.subject || "—";
+        const dayStr = s2.mode === 'rotation' && s2.days && s2.days.length > 0
+          ? ` (${s2.days.map(d => DAY_NAMES[d].slice(0, 3)).join(", ")})`
+          : "";
+        matches.push(`${c[0]}: ${sub}${dayStr}`);
       }
     });
 
-    if (map.size === 0) return "Free";
-
-    const parts: string[] = [];
-    map.forEach(entry => {
-      const base = `${entry.subject} - ${entry.className}`;
-      if (entry.days.size === data.daysPerWeek) {
-        parts.push(base);
-      } else {
-        const dayStr = Array.from(entry.days).sort((a, b) => a - b).map(d => (DAY_NAMES[d] || "").slice(0, 3)).join(", ");
-        parts.push(`${base} (${dayStr})`);
-      }
-    });
-
-    return parts.join(", ");
+    return matches.join(" | ") || "Free";
   }, [data.classes, data.daysPerWeek]);
 
-  const getLongLeavesForDate = useCallback((dateKey: string): LongLeave[] => {
-    return (data.longLeaves || []).filter(ll => ll && ll.from && dateKey >= ll.from && (!ll.to || dateKey <= ll.to));
+  const getLongLeavesForDate = useCallback((dateKeyStr: string): LongLeave[] => {
+    if (!data.longLeaves) return [];
+    return data.longLeaves.filter(ll => {
+      return dateKeyStr >= ll.from && (!ll.to || dateKeyStr <= ll.to);
+    });
   }, [data.longLeaves]);
 
-  const getLeavesForDate = useCallback((dateKey: string): string[] => {
+  const getLeavesForDate = useCallback((dateKeyStr: string): string[] => {
     const set = new Set<string>();
-    if (data.teacherLeaves && data.teacherLeaves[dateKey]) {
-      data.teacherLeaves[dateKey].forEach(t => set.add(t));
+    if (data.teacherLeaves && data.teacherLeaves[dateKeyStr]) {
+      data.teacherLeaves[dateKeyStr].forEach(t => set.add(t));
     }
-    getLongLeavesForDate(dateKey).forEach(ll => set.add(ll.teacher));
+    getLongLeavesForDate(dateKeyStr).forEach(ll => set.add(ll.teacher));
     return Array.from(set);
   }, [data.teacherLeaves, getLongLeavesForDate]);
 
-  const setLeavesForDate = useCallback((dateKey: string, teachers: string[]) => {
+  const setLeavesForDate = useCallback((dateKeyStr: string, teachers: string[]) => {
     updateData(prev => {
       const nextLeaves = { ...prev.teacherLeaves };
       if (!teachers.length) {
-        delete nextLeaves[dateKey];
+        delete nextLeaves[dateKeyStr];
       } else {
-        nextLeaves[dateKey] = teachers;
+        nextLeaves[dateKeyStr] = teachers;
       }
       return { ...prev, teacherLeaves: nextLeaves };
     });
@@ -544,6 +526,13 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const cascadeTeacherRename = useCallback((oldName: string, newName: string) => {
     if (!oldName || oldName === newName) return;
+    const lower = newName.toLowerCase();
+    // Refuse to merge into an existing teacher
+    if (dataRef.current.teachers.some(t => t !== oldName && t.toLowerCase() === lower)) {
+      console.warn(`Cannot rename teacher: "${newName}" already exists.`);
+      return;
+    }
+
     updateData(prev => {
       const nextClasses = prev.classes.map(c => {
         const incharge = c[1] === oldName ? newName : c[1];
@@ -619,74 +608,128 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [updateData]);
 
   const saveScenario = useCallback((name: string) => {
-    const raw = localStorage.getItem(SCENARIOS_KEY);
-    const scenarios = raw ? JSON.parse(raw) : {};
-    scenarios[name] = data;
-    localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
-  }, [data]);
+    try {
+      const raw = localStorage.getItem(SCENARIOS_KEY);
+      const scenarios = raw ? JSON.parse(raw) : {};
+      scenarios[name] = dataRef.current;
+      localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
+    } catch (e) {
+      notifyStorageError(e);
+    }
+  }, [notifyStorageError]);
 
   const loadScenario = useCallback((name: string): boolean => {
-    const raw = localStorage.getItem(SCENARIOS_KEY);
-    if (!raw) return false;
-    const scenarios = JSON.parse(raw);
-    if (!scenarios[name]) return false;
-    updateData(() => normalize(scenarios[name]));
-    return true;
+    try {
+      const raw = localStorage.getItem(SCENARIOS_KEY);
+      if (!raw) return false;
+      const scenarios = JSON.parse(raw);
+      if (!scenarios || !scenarios[name]) return false;
+      updateData(() => normalize(scenarios[name]));
+      return true;
+    } catch (e) {
+      console.error("Failed to load scenario:", e);
+      return false;
+    }
   }, [updateData]);
 
   const deleteScenario = useCallback((name: string) => {
-    const raw = localStorage.getItem(SCENARIOS_KEY);
-    if (!raw) return;
-    const scenarios = JSON.parse(raw);
-    delete scenarios[name];
-    localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
+    try {
+      const raw = localStorage.getItem(SCENARIOS_KEY);
+      if (!raw) return;
+      const scenarios = JSON.parse(raw);
+      delete scenarios[name];
+      localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
+    } catch (e) {
+      console.error("Failed to delete scenario:", e);
+    }
   }, []);
 
   const getScenarioNames = useCallback((): string[] => {
-    const raw = localStorage.getItem(SCENARIOS_KEY);
-    return raw ? Object.keys(JSON.parse(raw)).sort() : [];
+    try {
+      const raw = localStorage.getItem(SCENARIOS_KEY);
+      return raw ? Object.keys(JSON.parse(raw)).sort() : [];
+    } catch (e) {
+      console.error("Failed to get scenario names:", e);
+      return [];
+    }
   }, []);
 
   const resetEverything = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(SCENARIOS_KEY);
+    const keysToClear = [
+      STORAGE_KEY,
+      SCENARIOS_KEY,
+      'utAbsentTeacher',
+      'utWorkloadOpen',
+      'utHideGS',
+      'utLastSaved',
+      'utEditorClassIdx',
+      'utEditorPeriodIdx',
+      'utEditorMode',
+      'utCurrentTab',
+      'printStudioSecondHeaders'
+    ];
+    try {
+      keysToClear.forEach(k => localStorage.removeItem(k));
+    } catch (e) {
+      console.warn("Storage clear error:", e);
+    }
     setData(EMPTY_TIMETABLE_DATA);
     setHistoryStack([]);
     setRedoStack([]);
   }, []);
 
   const exportBackupJson = useCallback((): string => {
-    const scenariosRaw = localStorage.getItem(SCENARIOS_KEY);
-    const scenarios = scenariosRaw ? JSON.parse(scenariosRaw) : {};
+    let scenarios: Record<string, unknown> = {};
+    try {
+      const scenariosRaw = localStorage.getItem(SCENARIOS_KEY);
+      if (scenariosRaw) scenarios = JSON.parse(scenariosRaw);
+    } catch {}
     return JSON.stringify({
       app: "TimetableGrid",
       version: 4,
       exportedAt: new Date().toISOString(),
-      data,
+      data: dataRef.current,
       scenarios
     }, null, 2);
-  }, [data]);
+  }, []);
 
   const importBackupJson = useCallback((jsonString: string): boolean => {
     try {
       const payload = JSON.parse(jsonString);
+      if (!payload || typeof payload !== 'object') return false;
+
       let incomingData: TimetableData;
+
+      // Validate the file shape before touching storage
       if (payload.app && payload.data) {
-        incomingData = normalize(payload.data);
-        if (payload.scenarios) {
-          localStorage.setItem(SCENARIOS_KEY, JSON.stringify(payload.scenarios));
+        if (!Array.isArray(payload.data.classes) || !Array.isArray(payload.data.teachers) || !Array.isArray(payload.data.periods)) {
+          return false;
         }
-      } else if (payload.classes && payload.teachers && payload.periods) {
+        incomingData = normalize(payload.data);
+
+        // Merge scenarios safely without overriding existing ones accidentally
+        if (payload.scenarios && typeof payload.scenarios === 'object' && !Array.isArray(payload.scenarios)) {
+          try {
+            const raw = localStorage.getItem(SCENARIOS_KEY);
+            const existing = raw ? JSON.parse(raw) : {};
+            const merged = { ...existing, ...payload.scenarios };
+            localStorage.setItem(SCENARIOS_KEY, JSON.stringify(merged));
+          } catch (e) {
+            notifyStorageError(e);
+          }
+        }
+      } else if (Array.isArray(payload.classes) && Array.isArray(payload.teachers) && Array.isArray(payload.periods)) {
         incomingData = normalize(payload);
       } else {
         return false;
       }
+
       updateData(() => incomingData);
       return true;
     } catch {
       return false;
     }
-  }, [updateData]);
+  }, [updateData, notifyStorageError]);
 
   return (
     <TimetableContext.Provider
@@ -724,6 +767,11 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }}
     >
       {children}
+      {storageNotice && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-rose-900 text-white text-xs font-bold rounded-xl shadow-lg border border-rose-700 animate-in fade-in duration-200">
+          {storageNotice}
+        </div>
+      )}
     </TimetableContext.Provider>
   );
 };

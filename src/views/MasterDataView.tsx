@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { useTimetable } from '../context/TimetableContext';
 import { QUAL_LIST, RANK_LIST, DESIG_LIST } from '../types/timetable';
@@ -27,6 +27,7 @@ export const MasterDataView: React.FC = () => {
 
   const [activeTab, setActiveTab] = usePersistentState<'teacher' | 'subject' | 'class'>('utMasterTab', 'teacher');
   const [editingIdx, setEditingIdx] = useState<number>(-1);
+  const formCardRef = useRef<HTMLDivElement>(null);
 
   // Form states
   const [nameInput, setNameInput] = useState("");
@@ -87,6 +88,9 @@ export const MasterDataView: React.FC = () => {
       setInchargeInput(c[1]);
       setSectionInput(c[2]);
     }
+    setTimeout(() => {
+      formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
   };
 
   const handleSave = () => {
@@ -96,11 +100,13 @@ export const MasterDataView: React.FC = () => {
       return;
     }
 
+    const lower = trimmed.toLowerCase();
+
     if (activeTab === 'teacher') {
       if (editingIdx >= 0) {
         const oldName = data.teachers[editingIdx];
-        if (oldName !== trimmed && data.teachers.includes(trimmed)) {
-          alert("Another teacher already has this name.");
+        if (oldName.toLowerCase() !== lower && data.teachers.some(t => t.toLowerCase() === lower)) {
+          alert(`A teacher named "${trimmed}" already exists.`);
           return;
         }
         cascadeTeacherRename(oldName, trimmed);
@@ -112,8 +118,8 @@ export const MasterDataView: React.FC = () => {
           return { ...prev, teachers: next, teacherInfo: info };
         });
       } else {
-        if (data.teachers.includes(trimmed)) {
-          alert("Teacher already exists.");
+        if (data.teachers.some(t => t.toLowerCase() === lower)) {
+          alert(`A teacher named "${trimmed}" already exists.`);
           return;
         }
         updateData(prev => {
@@ -126,8 +132,8 @@ export const MasterDataView: React.FC = () => {
     } else if (activeTab === 'subject') {
       if (editingIdx >= 0) {
         const oldName = data.subjects[editingIdx];
-        if (oldName !== trimmed && data.subjects.includes(trimmed)) {
-          alert("Subject already exists.");
+        if (oldName.toLowerCase() !== lower && data.subjects.some(s => s.toLowerCase() === lower)) {
+          alert(`A subject named "${trimmed}" already exists.`);
           return;
         }
         cascadeSubjectRename(oldName, trimmed);
@@ -137,8 +143,8 @@ export const MasterDataView: React.FC = () => {
           return { ...prev, subjects: next };
         });
       } else {
-        if (data.subjects.includes(trimmed)) {
-          alert("Subject already exists.");
+        if (data.subjects.some(s => s.toLowerCase() === lower)) {
+          alert(`A subject named "${trimmed}" already exists.`);
           return;
         }
         updateData(prev => ({
@@ -149,8 +155,8 @@ export const MasterDataView: React.FC = () => {
     } else {
       if (editingIdx >= 0) {
         const oldName = data.classes[editingIdx][0];
-        if (oldName !== trimmed && data.classes.some((c, j) => j !== editingIdx && c[0] === trimmed)) {
-          alert("Class already exists.");
+        if (oldName.toLowerCase() !== lower && data.classes.some((c, j) => j !== editingIdx && c[0].toLowerCase() === lower)) {
+          alert(`A class named "${trimmed}" already exists.`);
           return;
         }
         cascadeClassRename(oldName, trimmed);
@@ -161,8 +167,8 @@ export const MasterDataView: React.FC = () => {
           return { ...prev, classes: next };
         });
       } else {
-        if (data.classes.some(c => c[0] === trimmed)) {
-          alert("Class already exists.");
+        if (data.classes.some(c => c[0].toLowerCase() === lower)) {
+          alert(`A class named "${trimmed}" already exists.`);
           return;
         }
         updateData(prev => ({
@@ -275,10 +281,21 @@ export const MasterDataView: React.FC = () => {
           confirmText: "Remove"
         },
         action: () => {
-          updateData(prev => ({
-            ...prev,
-            classes: prev.classes.filter((_, i) => i !== idx)
-          }));
+          updateData(prev => {
+            const nextClasses = prev.classes.filter((_, i) => i !== idx);
+            const nextExceptions = (prev.conflictExceptions || [])
+              .map(ex => ({
+                ...ex,
+                classes: ex.classes.filter(c => c !== name)
+              }))
+              .filter(ex => ex.classes.length > 0);
+
+            return {
+              ...prev,
+              classes: nextClasses,
+              conflictExceptions: nextExceptions
+            };
+          });
           resetForm();
         }
       });
@@ -362,7 +379,7 @@ export const MasterDataView: React.FC = () => {
       </div>
 
       {/* Input / Edit Form Card */}
-      <div className="bg-white dark:bg-stone-900 rounded-2xl p-4 sm:p-5 border border-stone-200 dark:border-stone-800 shadow-xs">
+      <div ref={formCardRef} className="bg-white dark:bg-stone-900 rounded-2xl p-4 sm:p-5 border border-stone-200 dark:border-stone-800 shadow-xs">
         <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 mb-3 flex items-center justify-between">
           <span>
             {editingIdx >= 0

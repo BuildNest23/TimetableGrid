@@ -156,22 +156,6 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
     refreshStorageInfo();
   }, [data]);
 
-  const handleCompactStorage = () => {
-    try {
-      const raw = localStorage.getItem("universalTimetable");
-      if (!raw) {
-        alert("Nothing to compact.");
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      localStorage.setItem("universalTimetable", JSON.stringify(parsed));
-      refreshStorageInfo();
-      alert("Storage compacted.");
-    } catch (e) {
-      alert("Could not compact: " + (e as Error).message);
-    }
-  };
-
   // --- Timetable validation state ---
   const [validationResults, setValidationResults] = useState<TimetableIssue[] | null>(null);
   const [validationOpen, setValidationOpen] = useState<boolean>(false);
@@ -446,6 +430,8 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
       while (nextFridayTimes.length < periodCount) nextFridayTimes.push({ start: '', end: '' });
 
       const clampedBreakAfter = breakAfter > periodCount ? 0 : breakAfter;
+      const fridayBreak = prev.fridayTimings?.breakAfter ?? 0;
+      const clampedFridayBreakAfter = fridayBreak > periodCount ? 0 : fridayBreak;
 
       return {
         ...prev,
@@ -459,10 +445,12 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
         classes: nextClasses,
         periodTimes: nextPeriodTimes.slice(0, periodCount),
         conflictExceptions: (prev.conflictExceptions || [])
+          .filter(ex => ex.period < periodCount)
           .map(ex => ({ ...ex, days: ex.days.filter(d => d < daysPerWeek) }))
           .filter(ex => ex.days.length > 0),
         fridayTimings: {
           ...prev.fridayTimings,
+          breakAfter: clampedFridayBreakAfter,
           periodTimes: nextFridayTimes.slice(0, periodCount)
         }
       };
@@ -1506,14 +1494,6 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
                   className="px-4 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition"
                 >
                   Refresh
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCompactStorage}
-                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition"
-                  title="Re-saves the timetable JSON without extra whitespace to save a few KB"
-                >
-                  Compact Storage
                 </button>
               </div>
             </>

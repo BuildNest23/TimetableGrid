@@ -8,17 +8,13 @@ import {
   PrintStudioDocType,
   A4_LANDSCAPE,
   A4_PORTRAIT,
-  HATCHED_BG,
   MARGIN_PX
 } from '../utils/printEngine';
 import { esc } from '../utils/printHtml';
+import { triggerPrint } from '../utils/printUtils';
 import { exportTimetableToExcel } from '../utils/excelExport';
 import {
   Printer,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  Sliders,
   CheckSquare,
   Square,
   Layers,
@@ -282,59 +278,10 @@ export const PrintStudioView: React.FC = () => {
     return () => window.removeEventListener('resize', updateScale);
   }, [orientation]);
 
-  // Direct print mechanism without --mult: matches exact generated A4 pages
+  // Print mechanism using shared triggerPrint
   const handlePrint = () => {
-    const printArea = document.getElementById('printArea');
-    if (!printArea) return;
-
     const printableHtml = buildPrintableHtml(data, layoutResult, layoutOpts);
-
-    // Inject dynamic @page style for A4
-    const styleId = 'dynamicPrintStudioPage';
-    let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
-    if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = `
-      @media print {
-        @page { size: A4 ${orientation}; margin: 8mm; }
-        html, body { background: #fff !important; color: #000 !important; }
-        #root > div > :not(#printArea) { display: none !important; }
-        #root > div { min-height: 0 !important; display: block !important; }
-        #printArea { display: block !important; width: 100% !important; background: #fff !important; }
-      }
-    `;
-
-    printArea.innerHTML = printableHtml;
-    printArea.style.display = 'block';
-
-    const cleanup = () => {
-      printArea.innerHTML = '';
-      printArea.style.display = 'none';
-      window.removeEventListener('afterprint', cleanup);
-      clearTimeout(fallbackTimer);
-    };
-
-    const isAndroid = !!(window.AndroidPrint && typeof window.AndroidPrint.printPage === 'function');
-    const fallbackMs = isAndroid ? 60000 : 5000;
-    const fallbackTimer = window.setTimeout(cleanup, fallbackMs);
-    window.addEventListener('afterprint', cleanup);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        try {
-          if (isAndroid) {
-            window.AndroidPrint!.printPage!();
-          } else {
-            window.print();
-          }
-        } catch (err) {
-          console.error('Print error:', err);
-        }
-      });
-    });
+    triggerPrint(printableHtml, { orientation, margin: '8mm' });
   };
 
   // Status readability badge color and text

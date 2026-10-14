@@ -37,15 +37,6 @@ export function parseTimeToMinutes(timeStr?: string): number | null {
   return h * 60 + m;
 }
 
-/**
- * Formats minutes from midnight to a 24-hr or 12-hr string (e.g. "08:30")
- */
-export function formatMinutes(mins: number): string {
-  const norm = ((mins % 1440) + 1440) % 1440;
-  const h = Math.floor(norm / 60);
-  const m = norm % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
 
 export interface DaySlot {
   type: 'assembly' | 'period' | 'break';

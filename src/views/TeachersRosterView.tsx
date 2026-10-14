@@ -58,7 +58,7 @@ export const TeachersRosterView: React.FC = () => {
     triggerPrint(content, { orientation: 'landscape', printSize: 'm' });
   };
 
-  const handleExportImage = async (share = false) => {
+  const handleExportImage = async (_share = false) => {
     const canvas = await createTimetableCanvas('roster', data, {
       teacherPeriodSummary,
       teacherTotalPeriods: getTeacherTotalPeriods,

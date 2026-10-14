@@ -1,21 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTimetable } from '../context/TimetableContext';
-import { LongLeave, DAY_NAMES } from '../types/timetable';
+import { DAY_NAMES } from '../types/timetable';
 import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExport';
 import { triggerPrint } from '../utils/printUtils';
 import { dateKey } from '../utils/dates';
 import {
-  UserCheck,
-  Calendar,
-  Layers,
   Printer,
   Download,
   Share2,
   Plus,
   Pencil,
   Trash2,
-  AlertCircle,
-  HelpCircle,
   ChevronDown,
   Users
 } from 'lucide-react';
@@ -359,7 +354,7 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
     triggerPrint(content, { orientation: 'landscape', printSize: 'm' });
   };
 
-  const handleExportImage = async (share: boolean) => {
+  const handleExportImage = async (_share?: boolean) => {
     if (!absentTeacher) {
       alert("Please select an absent teacher first.");
       return;

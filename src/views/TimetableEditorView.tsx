@@ -72,7 +72,10 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
   }, [data.classes.length, data.periods.length]);
 
   const conflicts = useMemo(() => computeConflicts(), [computeConflicts]);
-  const currentClass = data.classes[selectedClassIdx] || data.classes[0];
+  const safeClassIdx = data.classes.length > 0
+    ? Math.max(0, Math.min(selectedClassIdx, data.classes.length - 1))
+    : 0;
+  const currentClass = data.classes[safeClassIdx] || data.classes[0];
 
   const currentClassName = currentClass?.[0] ?? '';
   const currentSubject = currentClass?.[3]?.[selectedPeriodIdx] ?? '';
@@ -88,7 +91,7 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
     setShow2ndSlot(!!s2);
     setIsEditingRow(!!(currentSubject || currentTeacher || s2));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClassIdx, selectedPeriodIdx, currentClassName, currentSubject, currentTeacher, currentSlot2JSON]);
+  }, [safeClassIdx, selectedPeriodIdx, currentClassName, currentSubject, currentTeacher, currentSlot2JSON]);
 
   const jumpTargetRef = useRef<HTMLDivElement>(null);
   const dataClassesRef = useRef(data.classes);
@@ -116,9 +119,14 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
 
   if (!data.classes.length) {
     return (
-      <div className="bg-white dark:bg-stone-900 rounded-2xl p-8 border border-stone-200 dark:border-stone-800 text-center">
+      <div className="bg-white dark:bg-stone-900 rounded-3xl p-8 sm:p-12 border border-stone-200 dark:border-stone-800 text-center max-w-lg mx-auto my-6 shadow-xs">
+        <div className="w-14 h-14 mx-auto mb-4 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-400 rounded-2xl flex items-center justify-center">
+          <Layers className="w-7 h-7" />
+        </div>
         <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 mb-2">No Classes Found</h3>
-        <p className="text-xs text-stone-500 mb-4">Please add classes in the Master Lists section first.</p>
+        <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+          Please add at least one class in the "Classes &amp; Subjects" section first to start assigning subjects and teachers.
+        </p>
       </div>
     );
   }
@@ -150,8 +158,11 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
     }
 
     updateData(prev => {
+      if (!prev.classes.length) return prev;
+      const targetIdx = Math.max(0, Math.min(selectedClassIdx, prev.classes.length - 1));
       const nextClasses = [...prev.classes];
-      const cls = nextClasses[selectedClassIdx];
+      const cls = nextClasses[targetIdx];
+      if (!cls) return prev;
       const subs = [...cls[3]];
       const teas = [...cls[4]];
       const s2s = cls[5] ? [...cls[5]] : prev.periods.map(() => null);
@@ -160,7 +171,7 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
       teas[selectedPeriodIdx] = teacherDraft.trim();
       s2s[selectedPeriodIdx] = finalSlot2;
 
-      nextClasses[selectedClassIdx] = [cls[0], cls[1], cls[2], subs, teas, s2s] as ClassItem;
+      nextClasses[targetIdx] = [cls[0], cls[1], cls[2], subs, teas, s2s] as ClassItem;
       return { ...prev, classes: nextClasses };
     });
 
@@ -229,8 +240,11 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
       },
       action: () => {
         updateData(prev => {
+          if (!prev.classes.length) return prev;
+          const targetIdx = Math.max(0, Math.min(selectedClassIdx, prev.classes.length - 1));
           const nextClasses = [...prev.classes];
-          const cls = nextClasses[selectedClassIdx];
+          const cls = nextClasses[targetIdx];
+          if (!cls) return prev;
           const subs = [...cls[3]];
           const teas = [...cls[4]];
           const s2s = cls[5] ? [...cls[5]] : prev.periods.map(() => null);
@@ -239,7 +253,7 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
           teas[pi] = "";
           s2s[pi] = null;
 
-          nextClasses[selectedClassIdx] = [cls[0], cls[1], cls[2], subs, teas, s2s] as ClassItem;
+          nextClasses[targetIdx] = [cls[0], cls[1], cls[2], subs, teas, s2s] as ClassItem;
           return { ...prev, classes: nextClasses };
         });
       }
@@ -336,11 +350,11 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         {data.classes.map((c, i) => (
           <button
-            key={c[0]}
+            key={`${i}-${c[0]}`}
             type="button"
             onClick={() => setSelectedClassIdx(i)}
             className={`min-h-[40px] px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-              selectedClassIdx === i
+              safeClassIdx === i
                 ? 'bg-emerald-800 text-white shadow-xs'
                 : 'bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-800 hover:bg-stone-50'
             }`}
@@ -795,7 +809,10 @@ export const TimetableEditorView: React.FC<TimetableEditorViewProps> = ({ initia
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setSelectedPeriodIdx(pi)}
+                        onClick={() => {
+                          setSelectedPeriodIdx(pi);
+                          jumpTargetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }}
                         className="p-2 text-emerald-800 dark:text-emerald-400 hover:bg-emerald-100/50 dark:hover:bg-emerald-950/60 rounded-xl"
                         title="Edit Period"
                       >

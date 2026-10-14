@@ -100,51 +100,6 @@
     color: #000 !important;
   }
 
-  .print-sheet.fixed-sheet {
-    width: 100%;
-    height: var(--page-h, 194mm);
-    max-height: var(--page-h, 194mm);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    page-break-after: always;
-    page-break-inside: avoid;
-  }
-  .print-sheet.fixed-sheet:last-child {
-    page-break-after: auto;
-  }
-  .print-sheet.flow-sheet {
-    display: block;
-    page-break-after: always;
-  }
-  .flow-sheet thead {
-    display: table-header-group;
-  }
-  .flow-sheet tbody tr {
-    page-break-inside: avoid;
-  }
-
-  .sheet-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-  }
-  .sheet-body > table.fill {
-    width: 100%;
-    height: 100%;
-    table-layout: fixed;
-    border-collapse: collapse;
-    flex: 1;
-  }
-  .sheet-body > table.fill > tbody {
-    height: 100%;
-  }
-  .sheet-body > table.fill > tbody > tr {
-    height: 1px;
-  }
-
   .print-sheet th,
   .print-sheet td {
     border-top: none !important;
@@ -181,75 +136,6 @@
   }
   .print-sheet td {
     font-size: calc(8.5pt * var(--mult, 1)) !important;
-  }
-
-  .wide-sheet table.fill,
-  .wide-sheet th,
-  .wide-sheet td {
-    font-size: calc(8.5pt * var(--mult, 1)) !important;
-  }
-  .class-sheet table.fill,
-  .class-sheet th,
-  .class-sheet td {
-    font-size: calc(12pt * var(--mult, 1)) !important;
-  }
-  .teacher-sheet table.fill,
-  .teacher-sheet td {
-    font-size: calc(13pt * var(--mult, 1)) !important;
-  }
-
-  .print-sheet .print-title,
-  .print-title {
-    font-family: Georgia, 'Times New Roman', serif !important;
-    font-size: calc(18pt * var(--mult, 1)) !important;
-    text-align: center !important;
-    margin: 0 !important;
-    font-weight: 700 !important;
-    color: #000 !important;
-  }
-  .print-sheet .print-sub,
-  .print-sub {
-    font-size: calc(10pt * var(--mult, 1)) !important;
-    text-align: center !important;
-    text-transform: uppercase !important;
-    font-variant: small-caps !important;
-    letter-spacing: 0.18em !important;
-    margin: 1mm 0 2mm 0 !important;
-    font-weight: 700 !important;
-    color: #000 !important;
-  }
-
-  .print-sheet .break-cell,
-  .print-sheet .break-header {
-    background: repeating-linear-gradient(45deg, #000, #000 1px, transparent 1px, transparent 5px) !important;
-    opacity: 0.18 !important;
-    width: 14px !important;
-    min-width: 14px !important;
-    max-width: 14px !important;
-    padding: 0 !important;
-    border-left: none !important;
-    border-right: none !important;
-    border-bottom: 0.5pt solid #000 !important;
-  }
-  .print-sheet .break-header {
-    border-top: 1.75pt solid #000 !important;
-    border-bottom: 1pt solid #000 !important;
-  }
-  .print-sheet .break-text {
-    display: none !important;
-  }
-  .print-sheet .sectionrow td {
-    background: #fff !important;
-    color: #000 !important;
-    text-align: center !important;
-    font-weight: 800 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.14em !important;
-    border-top: 1pt solid #000 !important;
-    border-bottom: 1.5pt solid #000 !important;
-    border-left: none !important;
-    border-right: none !important;
-    padding: 2.5mm 0 !important;
   }
 
   * {

@@ -1,4 +1,4 @@
-import { TimetableData, ClassItem, DAY_NAMES } from '../types/timetable';
+import { TimetableData, ClassItem } from '../types/timetable';
 import { esc, wholeSchoolCellLines, cellTextForDay } from './printHtml';
 import { dateKey } from './dates';
 
@@ -105,8 +105,8 @@ interface TableSectionGroup {
 function estimateHeightsNodeFallback(
   data: TimetableData,
   opts: PageLayoutOptions,
-  titleBlockHtml: string,
-  tableHeaderTr: string,
+  _titleBlockHtml: string,
+  _tableHeaderTr: string,
   rowDefs: TableRowDef[]
 ): { titleBlockHeight: number; tableHeaderHeight: number; rowHeights: number[] } {
   const { fontPt, showTimes, type } = opts;
@@ -897,9 +897,6 @@ import {
 export { getPeriodTimes, hasDifferingFridayTimings };
 export type { PeriodTimeInfo, BreakInfo, TimingsData };
 
-// Backward compatibility aliases
-export type PeriodTimingItem = PeriodTimeInfo;
-export type TimingsModeResult = TimingsData;
 
 /**
  * Free Staff helper that calculates teachers free in a period using existing Free Staff logic.
@@ -1809,7 +1806,7 @@ export function findBestFitFontSize(
  * Build complete print HTML string suitable for injecting into #printArea and calling window.print()
  */
 export function buildPrintableHtml(
-  data: TimetableData,
+  _data: TimetableData,
   layout: PaginationResult,
   opts: PageLayoutOptions
 ): string {

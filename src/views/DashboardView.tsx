@@ -25,9 +25,7 @@ import {
   Search,
   X,
   Radio,
-  UserX,
-  Flame,
-  Info
+  UserX
 } from 'lucide-react';
 
 interface DashboardViewProps {
