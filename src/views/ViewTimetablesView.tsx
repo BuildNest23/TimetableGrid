@@ -8,6 +8,7 @@ import {
   buildCardDocumentHTML,
   getFreeTeachersForPeriod
 } from '../utils/printEngine';
+import { createTimetableCanvas } from '../utils/canvasExport';
 import { getPeriodTimes, PeriodTimeInfo } from '../utils/timings';
 import { triggerPrint } from '../utils/printUtils';
 import { useNow } from '../hooks/useNow';
@@ -449,73 +450,145 @@ export const ViewTimetablesView: React.FC = () => {
     }
   };
 
-  const generateImageBlob = async (): Promise<Blob | null> => {
-    if (!cardHtml) return null;
+  // Convert card HTML into well-formed XHTML (SVG foreignObject is strict XML:
+  // an unclosed <img>/<br> or a stray entity makes the image fail to load).
+  const toXhtml = (html: string): string => {
+    try {
+      const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+      const ser = new XMLSerializer();
+      return Array.from(doc.body.childNodes).map(n => ser.serializeToString(n)).join('');
+    } catch {
+      return html;
+    }
+  };
 
-    // Render HTML card inside an SVG foreignObject for high-resolution PNG rasterization
+  // Rasterises the on-screen card HTML. Always settles (never hangs): resolves null on any failure.
+  const renderCardCanvas = (): Promise<HTMLCanvasElement | null> => {
+    if (!cardHtml) return Promise.resolve(null);
+
     const width = 794;
     const height = 1123;
-    const scale = 2; // 2x for sharp print quality
+    const scale = 2;
 
-    const svgXml = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-        <foreignObject width="100%" height="100%">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px; height:${height}px; background:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-            ${cardHtml}
-          </div>
-        </foreignObject>
-      </svg>
-    `;
-
-    const svgBlob = new Blob([svgXml], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
+    const svgXml =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+      `<foreignObject width="100%" height="100%">` +
+      `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px; height:${height}px; background:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">` +
+      toXhtml(cardHtml) +
+      `</div></foreignObject></svg>`;
 
     return new Promise((resolve) => {
+      let settled = false;
+      const finish = (c: HTMLCanvasElement | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(c);
+      };
+      const timer = setTimeout(() => finish(null), 10000);
+
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = width * scale;
-        canvas.height = height * scale;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return finish(null);
           ctx.scale(scale, scale);
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0);
+          finish(canvas);
+        } catch (e) {
+          console.error('Card rasterise error:', e);
+          finish(null);
         }
-        URL.revokeObjectURL(url);
-        canvas.toBlob(resolve, 'image/png');
       };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve(null);
-      };
-      img.src = url;
+      img.onerror = () => finish(null);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgXml);
     });
+  };
+
+  // Canvas for the current popup: the card look first, the app's built-in canvas renderer as a fallback
+  const getExportCanvas = async (): Promise<HTMLCanvasElement | null> => {
+    const fromCard = await renderCardCanvas();
+    if (fromCard) {
+      // Make sure the canvas is exportable (not tainted)
+      try { fromCard.toDataURL('image/png').length; return fromCard; } catch { /* fall through */ }
+    }
+    if (popupItem && (popupItem.type === 'class' || popupItem.type === 'teacher')) {
+      try {
+        return await createTimetableCanvas(popupItem.type, data, {
+          selectedClass: popupItem.type === 'class' ? String(popupItem.id) : undefined,
+          selectedTeacher: popupItem.type === 'teacher' ? String(popupItem.id) : undefined,
+          teacherPeriodSummary,
+          teacherTotalPeriods: getTeacherTotalPeriods,
+          getLeavesForDate
+        });
+      } catch (e) {
+        console.error('Fallback canvas error:', e);
+      }
+    }
+    return null;
+  };
+
+  const getFileName = (): string => {
+    if (!popupItem) return 'Timetable.png';
+    if (popupItem.type === 'class') return `Timetable-Class-${popupItem.id}.png`;
+    if (popupItem.type === 'teacher') return `Timetable-${popupItem.id}.png`;
+    return `${data.schoolName || 'School'} - Period ${popupItem.id}.png`;
+  };
+
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const str = String(r.result || '');
+        const i = str.indexOf(',');
+        res(i >= 0 ? str.slice(i + 1) : str);
+      };
+      r.onerror = () => rej(r.error);
+      r.readAsDataURL(blob);
+    });
+
+  const canvasToBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> =>
+    new Promise(res => {
+      let done = false;
+      const t = setTimeout(() => { if (!done) { done = true; res(null); } }, 8000);
+      try {
+        canvas.toBlob(b => { if (!done) { done = true; clearTimeout(t); res(b); } }, 'image/png');
+      } catch {
+        if (!done) { done = true; clearTimeout(t); res(null); }
+      }
+    });
+
+  const browserDownload = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
 
   const handleSaveImage = async () => {
     if (!popupItem) return;
     setIsSavingImage(true);
     try {
-      const blob = await generateImageBlob();
+      const canvas = await getExportCanvas();
+      if (!canvas) throw new Error('Canvas generation failed');
+      const blob = await canvasToBlob(canvas);
       if (!blob) throw new Error('Blob generation failed');
+      const fileName = getFileName();
 
-      let fileName = '';
-      if (popupItem.type === 'class') {
-        fileName = `Timetable-Class-${popupItem.id}.png`;
-      } else if (popupItem.type === 'teacher') {
-        fileName = `Timetable-${popupItem.id}.png`;
+      if (window.AndroidImage && typeof window.AndroidImage.saveBase64Image === 'function') {
+        window.AndroidImage.saveBase64Image(await blobToBase64(blob), fileName);
       } else {
-        fileName = `${data.schoolName || 'School'} - Period ${popupItem.id}.png`;
+        browserDownload(blob, fileName);
       }
-
-      const link = document.createElement('a');
-      link.download = fileName;
-      link.href = URL.createObjectURL(blob);
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1500);
-
       showToast('Image saved.');
     } catch (err) {
       console.error('Save image error:', err);
@@ -529,33 +602,27 @@ export const ViewTimetablesView: React.FC = () => {
     if (!popupItem) return;
     setIsSharing(true);
     try {
-      const blob = await generateImageBlob();
+      const canvas = await getExportCanvas();
+      if (!canvas) throw new Error('Canvas generation failed');
+      const blob = await canvasToBlob(canvas);
       if (!blob) throw new Error('Blob generation failed');
+      const fileName = getFileName();
+      const title = fileName.replace('.png', '');
 
-      let fileName = '';
-      if (popupItem.type === 'class') {
-        fileName = `Timetable-Class-${popupItem.id}.png`;
-      } else if (popupItem.type === 'teacher') {
-        fileName = `Timetable-${popupItem.id}.png`;
-      } else {
-        fileName = `${data.schoolName || 'School'} - Period ${popupItem.id}.png`;
+      if (window.AndroidShare && typeof window.AndroidShare.shareBase64Image === 'function') {
+        window.AndroidShare.shareBase64Image(await blobToBase64(blob), fileName, title);
+        return;
       }
 
       const file = new File([blob], fileName, { type: 'image/png' });
-
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: fileName.replace('.png', ''),
-        });
+        await navigator.share({ files: [file], title });
         showToast('Shared successfully.');
+      } else if (window.AndroidImage && typeof window.AndroidImage.saveBase64Image === 'function') {
+        window.AndroidImage.saveBase64Image(await blobToBase64(blob), fileName);
+        showToast('Image saved.');
       } else {
-        // Fallback: download
-        const link = document.createElement('a');
-        link.download = fileName;
-        link.href = URL.createObjectURL(blob);
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+        browserDownload(blob, fileName);
         showToast('Image saved.');
       }
     } catch (err: any) {
