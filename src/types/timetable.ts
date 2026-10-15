@@ -28,6 +28,16 @@ export interface LongLeave {
   reason: string;
 }
 
+/**
+ * The Substitute Board for one date.
+ * - absent: teachers whose periods need cover on that date
+ * - assigned: absent teacher -> period index (as string, 0-based) -> substitute teacher
+ */
+export interface SubstituteBoard {
+  absent: string[];
+  assigned: Record<string, Record<string, string>>;
+}
+
 export interface ConflictException {
   period: number; // 0-indexed
   teacher: string;
@@ -72,6 +82,8 @@ export interface TimetableData {
   teacherLeaves: Record<string, string[]>;
   leaveDate: string;
   longLeaves: LongLeave[];
+  /** Saved Substitute Board per date ("YYYY-MM-DD"): absent list and who covers which period. */
+  substituteBoards: Record<string, SubstituteBoard>;
   conflictExceptions: ConflictException[];
   periodTimes: PeriodTime[];
   fridayTimings: FridayTimings;
@@ -138,6 +150,7 @@ export const EMPTY_TIMETABLE_DATA: TimetableData = {
   teacherLeaves: {},
   leaveDate: "",
   longLeaves: [],
+  substituteBoards: {},
   conflictExceptions: [],
   periodTimes: [1, 2, 3, 4, 5, 6, 7, 8].map(() => ({ start: "", end: "" })),
   fridayTimings: {
