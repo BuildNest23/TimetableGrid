@@ -227,6 +227,21 @@ export const MasterDataView: React.FC = () => {
             // Clean conflict exceptions
             const nextExceptions = (prev.conflictExceptions || []).filter(ex => ex.teacher !== name);
 
+            // Clean saved substitute boards
+            const nextBoards: typeof prev.substituteBoards = {};
+            Object.keys(prev.substituteBoards || {}).forEach(d => {
+              const b = prev.substituteBoards[d];
+              const assigned: Record<string, Record<string, string>> = {};
+              Object.keys(b.assigned || {}).forEach(a => {
+                if (a === name) return;
+                const per: Record<string, string> = {};
+                Object.entries(b.assigned[a]).forEach(([pi, t]) => { if (t !== name) per[pi] = t; });
+                if (Object.keys(per).length) assigned[a] = per;
+              });
+              const absent = b.absent.filter(t => t !== name);
+              if (absent.length || Object.keys(assigned).length) nextBoards[d] = { absent, assigned };
+            });
+
             // Clean persisted absent teacher
             try {
               if (localStorage.getItem('utAbsentTeacher') === name) {
@@ -241,6 +256,7 @@ export const MasterDataView: React.FC = () => {
               teacherInfo: nextInfo,
               teacherLeaves: nextLeaves,
               longLeaves: nextLongLeaves,
+              substituteBoards: nextBoards,
               conflictExceptions: nextExceptions
             };
           });

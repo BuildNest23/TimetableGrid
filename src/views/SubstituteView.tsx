@@ -1,11 +1,22 @@
-import { formatPeriodsDW } from '../utils/periodsDW';
-import { buildSubstituteDoc } from '../utils/printDocs';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTimetable } from '../context/TimetableContext';
-import { DAY_NAMES } from '../types/timetable';
+import { DAY_NAMES, SubstituteBoard } from '../types/timetable';
+import { formatPeriodsDW } from '../utils/periodsDW';
+import { buildSubstituteDoc, SubstituteDocRow } from '../utils/printDocs';
 import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExport';
 import { triggerPrint } from '../utils/printUtils';
 import { dateKey } from '../utils/dates';
+import {
+  autoFillAssignments,
+  candidatesFor,
+  dayIndexForDate,
+  nextSchoolDayFrom,
+  periodsNeedingCover,
+  teachingAt,
+  tierLabel,
+  Candidate,
+  SubRules
+} from '../utils/substitute';
 import {
   Printer,
   Download,
@@ -13,14 +24,36 @@ import {
   Plus,
   Pencil,
   Trash2,
-  ChevronDown,
-  Users
+  X,
+  Check,
+  Search,
+  Sparkles,
+  TriangleAlert
 } from 'lucide-react';
 
 interface SubstituteViewProps {
   initialTeacher?: string;
   onTeacherHandled?: () => void;
 }
+
+type TabId = 'assign' | 'sheet' | 'load' | 'leaves' | 'details';
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'assign', label: 'Assign' },
+  { id: 'sheet', label: 'Sheet' },
+  { id: 'load', label: 'Load' },
+  { id: 'leaves', label: 'Leaves' },
+  { id: 'details', label: 'Details' }
+];
+
+const EMPTY_BOARD: SubstituteBoard = { absent: [], assigned: {} };
+
+const CARD = 'bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-xs';
+const LABEL = 'block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1';
+const INPUT =
+  'w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-600';
+const BTN_SOFT =
+  'px-3.5 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50';
 
 export const SubstituteView: React.FC<SubstituteViewProps> = ({
   initialTeacher,
@@ -36,457 +69,982 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
     teacherPeriodSummary
   } = useTimetable();
 
-  /* ---------- date helpers ---------- */
-  // Returns the day-of-week index (0 = first school day, ... , -1 = weekend / outside school week)
-  const getDayIdxForDate = (key: string): number => {
-    if (!key) return -1;
-    try {
-      const [y, m, d] = key.split("-").map(Number);
-      const dow = new Date(y, m - 1, d).getDay(); // 0=Sun,1=Mon,...,6=Sat
-      const map: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
-      const idx = map[dow];
-      return idx >= 0 && idx < data.daysPerWeek ? idx : -1;
-    } catch {
-      return -1;
-    }
-  };
-
-  const isValidSchoolDay = (key: string): boolean => getDayIdxForDate(key) >= 0;
-
-  // Walk forward from a date until we hit a valid school day (max 14 steps to be safe).
-  const nextSchoolDayFrom = (startKey: string): string => {
-    try {
-      const [y, m, d] = startKey.split("-").map(Number);
-      const cur = new Date(y, m - 1, d);
-      for (let i = 0; i < 14; i++) {
-        const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
-        if (isValidSchoolDay(key)) return key;
-        cur.setDate(cur.getDate() + 1);
-      }
-    } catch {
-      // fall through
-    }
-    return startKey;
-  };
+  /* ---------- date ---------- */
+  const isValidSchoolDay = (key: string): boolean => dayIndexForDate(data, key) >= 0;
 
   const [leaveDate, setLeaveDate] = useState<string>(() => {
-    const stored = data.leaveDate || "";
+    const stored = data.leaveDate || '';
     if (isValidSchoolDay(stored)) return stored;
-    // If the stored date is stale or a weekend, snap to the next school day from today
     const today = dateKey();
-    const todayIsSchoolDay = isValidSchoolDay(today);
-    return todayIsSchoolDay ? today : nextSchoolDayFrom(today);
+    return isValidSchoolDay(today) ? today : nextSchoolDayFrom(data, today);
   });
 
-  const [absentTeacher, setAbsentTeacher] = useState<string>(() => {
-    if (initialTeacher && data.teachers.includes(initialTeacher)) {
-      return initialTeacher;
-    }
-    try {
-      const stored = localStorage.getItem("utAbsentTeacher");
-      if (stored && data.teachers.includes(stored)) return stored;
-    } catch { /* ignore */ }
-    return data.teachers[0] || "";
-  });
-
-  // When navigated with an initial teacher (e.g. from Dashboard absent card), select them and snap to today
-  useEffect(() => {
-    if (initialTeacher && data.teachers.includes(initialTeacher)) {
-      setAbsentTeacher(initialTeacher);
-      try {
-        localStorage.setItem("utAbsentTeacher", initialTeacher);
-      } catch { /* ignore */ }
-      const today = dateKey();
-      if (isValidSchoolDay(today)) {
-        setLeaveDate(today);
-        updateData(prev => ({ ...prev, leaveDate: today }), true);
-      }
-      onTeacherHandled?.();
-    }
-  }, [initialTeacher, data.teachers, onTeacherHandled]);
-  const [showLongLeaveForm, setShowLongLeaveForm] = useState<boolean>(false);
-  const [editingLongLeaveId, setEditingLongLeaveId] = useState<string | null>(null);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [shortLeavesOpen, setShortLeavesOpen] = useState<boolean>(false);
-
-  // --- On mount: if the stored date is stale/weekend, snap to the next school day ---
+  // On mount: if the stored date is empty, in the past or not a school day, snap to the next school day
   useEffect(() => {
     const today = dateKey();
-    const stored = data.leaveDate || "";
-    const todayIsSchoolDay = isValidSchoolDay(today);
-    const target = todayIsSchoolDay ? today : nextSchoolDayFrom(today);
-
-    // Only overwrite if the stored date is empty, in the past, or a non-school day.
-    const storedIsValidFutureOrTodaySchoolDay =
-      stored && stored >= today && isValidSchoolDay(stored);
-
-    if (!storedIsValidFutureOrTodaySchoolDay) {
+    const stored = data.leaveDate || '';
+    const target = isValidSchoolDay(today) ? today : nextSchoolDayFrom(data, today);
+    const storedIsFine = stored && stored >= today && isValidSchoolDay(stored);
+    if (!storedIsFine) {
       setLeaveDate(target);
       updateData(prev => ({ ...prev, leaveDate: target }), true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Long leave form inputs
-  const [llTeacher, setLlTeacher] = useState<string>(data.teachers[0] || "");
-  const [llFrom, setLlFrom] = useState<string>(dateKey());
-  const [llTo, setLlTo] = useState<string>("");
-  const [llReason, setLlReason] = useState<string>("");
+  // Opened from the Dashboard "absent" card: add that teacher to today's board
+  useEffect(() => {
+    if (!initialTeacher || !data.teachers.includes(initialTeacher)) return;
+    const today = dateKey();
+    const target = isValidSchoolDay(today) ? today : leaveDate;
+    setLeaveDate(target);
+    updateData(prev => {
+      const boards = { ...prev.substituteBoards };
+      const cur = boards[target] || EMPTY_BOARD;
+      if (!cur.absent.includes(initialTeacher)) {
+        boards[target] = { ...cur, absent: [...cur.absent, initialTeacher] };
+      }
+      return { ...prev, leaveDate: target, substituteBoards: boards };
+    }, true);
+    onTeacherHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTeacher]);
 
-  const onLeaveAll = useMemo(() => getLeavesForDate(leaveDate), [getLeavesForDate, leaveDate]);
-  const otherLeaves = useMemo(() => onLeaveAll.filter(t => t !== absentTeacher), [onLeaveAll, absentTeacher]);
-  const longLeavesOnDate = useMemo(() => getLongLeavesForDate(leaveDate), [getLongLeavesForDate, leaveDate]);
-
-  // Column visibility flags
-  const showWorkloadCol = data.substituteRecommendWorkload !== false;
-  const showGroupCol = data.substituteRecommendGroup !== false;
-
-  // Day of week index for leaveDate
-  const dayIdx = useMemo(() => getDayIdxForDate(leaveDate), [leaveDate, data.daysPerWeek]);
-
+  const dayIdx = useMemo(() => dayIndexForDate(data, leaveDate), [data, leaveDate]);
   const isDayInWeek = dayIdx >= 0;
 
-  // Grade/group comparison function
-  const compareQualRank = (abs: string, cand: string) => {
-    const a = data.teacherInfo[abs] || { qual: "", rank: "", desig: "" };
-    const b = data.teacherInfo[cand] || { qual: "", rank: "", desig: "" };
-    const sameRank = a.rank && b.rank && a.rank === b.rank;
-    const sameQual = a.qual && b.qual && a.qual === b.qual;
-    if (sameRank && sameQual) return 0;
-    if (sameRank) return 1;
-    if (sameQual) return 2;
-    if (a.rank && !b.rank) return 3;
-    if (a.qual && !b.qual) return 4;
-    return 5;
+  /* ---------- the saved board for this date ---------- */
+  const board = data.substituteBoards[leaveDate] || EMPTY_BOARD;
+  const absent = useMemo(() => board.absent.filter(t => data.teachers.includes(t)), [board.absent, data.teachers]);
+  const assigned = board.assigned;
+
+  const writeBoard = (fn: (b: SubstituteBoard) => SubstituteBoard) => {
+    updateData(prev => {
+      const cur = prev.substituteBoards[leaveDate] || EMPTY_BOARD;
+      const next = fn(cur);
+      const boards = { ...prev.substituteBoards };
+      if (!next.absent.length && !Object.keys(next.assigned).length) delete boards[leaveDate];
+      else boards[leaveDate] = next;
+      return { ...prev, substituteBoards: boards };
+    });
   };
 
-  // Build rows for each period
-  const substitutionRows = useMemo(() => {
-    if (!absentTeacher) return [];
+  /* ---------- leaves ---------- */
+  const onLeaveAll = useMemo(() => getLeavesForDate(leaveDate), [getLeavesForDate, leaveDate]);
+  const longLeavesOnDate = useMemo(() => getLongLeavesForDate(leaveDate), [getLongLeavesForDate, leaveDate]);
+  const otherLeaves = useMemo(() => onLeaveAll.filter(t => !absent.includes(t)), [onLeaveAll, absent]);
 
-    const priorRecommended: Record<string, number> = {};
+  /* ---------- rules ---------- */
+  const showWorkloadCol = data.substituteRecommendWorkload !== false;
+  const showGroupCol = data.substituteRecommendGroup !== false;
+  const rules: SubRules = {
+    workload: showWorkloadCol,
+    group: showGroupCol,
+    nonTeaching: !!data.substituteIncludeNonTeaching
+  };
 
-    return data.periods.map((p, pi) => {
-      const assignments: string[] = [];
-      if (isDayInWeek) {
-        data.classes.forEach(c => {
-          const t1 = c[4][pi];
-          const s2 = c[5] ? c[5][pi] : null;
-          let isSlot1Active = true;
-          if (s2 && s2.mode === 'rotation' && s2.days.includes(dayIdx)) isSlot1Active = false;
+  const baseArgs = {
+    data,
+    dayIdx,
+    absentList: absent,
+    onLeave: onLeaveAll,
+    rules,
+    getLoad: getTeacherTotalPeriods
+  };
 
-          if (t1 === absentTeacher && isSlot1Active) {
-            assignments.push(`${c[3][pi] || "—"} (${c[0]})`);
-          } else if (s2 && s2.teacher === absentTeacher && s2.mode !== 'same') {
-            const isSlot2Active = s2.mode === 'parallel' || s2.days.includes(dayIdx);
-            if (isSlot2Active) {
-              assignments.push(`${s2.subject || "—"} (${c[0]})`);
-            }
-          }
-        });
-      }
+  const fmtLoad = (n: number) => formatPeriodsDW(n, data.daysPerWeek, data.periodsDisplay);
+  const infoLine = (t: string) => {
+    const i = data.teacherInfo[t];
+    return i ? [i.rank, i.qual].filter(Boolean).join(' ') : '';
+  };
 
-      const isBusy = assignments.length > 0;
-      if (!isBusy) {
-        return {
-          period: p,
-          info: "",
-          isFree: true,
-          bestWorkload: "No cover needed",
-          bestName: "",
-          bestLoad: "",
-          groupMatches: [],
-          freeTeachers: [],
-          freeList: []
-        };
-      }
+  /* ---------- UI state ---------- */
+  const [tab, setTab] = useState<TabId>('assign');
+  const [pick, setPick] = useState<{ abs: string; pi: number } | null>(null);
+  const [pickSearch, setPickSearch] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
+  const [addSearch, setAddSearch] = useState('');
+  const [notice, setNotice] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [leaveMode, setLeaveMode] = useState<'short' | 'long'>('short');
 
-      const free = data.teachers.filter(t => {
-        if (t === absentTeacher) return false;
-        if (onLeaveAll.includes(t)) return false;
-        if (!data.substituteIncludeNonTeaching && getTeacherTotalPeriods(t) === 0) return false;
+  // Long leave form
+  const [showLongLeaveForm, setShowLongLeaveForm] = useState(false);
+  const [editingLongLeaveId, setEditingLongLeaveId] = useState<string | null>(null);
+  const [llTeacher, setLlTeacher] = useState<string>(data.teachers[0] || '');
+  const [llFrom, setLlFrom] = useState<string>(dateKey());
+  const [llTo, setLlTo] = useState<string>('');
+  const [llReason, setLlReason] = useState<string>('');
 
-        return !data.classes.some(c => {
-          const t1 = c[4][pi];
-          const s2 = c[5] ? c[5][pi] : null;
-          let s1Active = true;
-          if (s2 && s2.mode === 'rotation' && s2.days.includes(dayIdx)) s1Active = false;
-          if (t1 === t && s1Active) return true;
-          if (s2 && s2.teacher === t && s2.mode !== 'same') {
-            return s2.mode === 'parallel' || s2.days.includes(dayIdx);
-          }
-          return false;
-        });
-      });
+  const sheetOpen = !!pick || addOpen;
+  useEffect(() => {
+    document.body.style.overflow = sheetOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [sheetOpen]);
 
-      const rankedByWorkload = free.map(t => ({
-        teacher: t,
-        score: getTeacherTotalPeriods(t) + (priorRecommended[t] || 0)
-      })).sort((a, b) => a.score - b.score || a.teacher.localeCompare(b.teacher));
+  useEffect(() => {
+    if (!notice) return;
+    const id = setTimeout(() => setNotice(''), 4000);
+    return () => clearTimeout(id);
+  }, [notice]);
 
-      const best = rankedByWorkload[0];
-      if (best) {
-        priorRecommended[best.teacher] = (priorRecommended[best.teacher] || 0) + 1;
-      }
+  /* ---------- board actions ---------- */
+  const addAbsent = (t: string) =>
+    writeBoard(b => (b.absent.includes(t) ? b : { ...b, absent: [...b.absent, t] }));
 
-      const rankedByGroup = free.map(t => ({
-        teacher: t,
-        tier: compareQualRank(absentTeacher, t),
-        load: getTeacherTotalPeriods(t),
-        info: data.teacherInfo[t] || { qual: "", rank: "", desig: "" }
-      })).sort((a, b) => a.tier - b.tier || a.load - b.load || a.teacher.localeCompare(b.teacher));
+  const removeAbsent = (t: string) =>
+    writeBoard(b => {
+      const nextAssigned = { ...b.assigned };
+      delete nextAssigned[t];
+      return { absent: b.absent.filter(x => x !== t), assigned: nextAssigned };
+    });
 
+  const setCover = (abs: string, pi: number, sub: string | null) =>
+    writeBoard(b => {
+      const per = { ...(b.assigned[abs] || {}) };
+      if (sub) per[String(pi)] = sub;
+      else delete per[String(pi)];
+      const nextAssigned = { ...b.assigned };
+      if (Object.keys(per).length) nextAssigned[abs] = per;
+      else delete nextAssigned[abs];
+      return { ...b, assigned: nextAssigned };
+    });
+
+  const clearAssignments = (abs: string) =>
+    writeBoard(b => {
+      const nextAssigned = { ...b.assigned };
+      delete nextAssigned[abs];
+      return { ...b, assigned: nextAssigned };
+    });
+
+  const needCount = (abs: string) => periodsNeedingCover(data, abs, dayIdx).length;
+  const doneCount = (abs: string) =>
+    periodsNeedingCover(data, abs, dayIdx).filter(pi => assigned[abs]?.[String(pi)]).length;
+
+  const handleAutoFill = () => {
+    if (!absent.length) return;
+    const before = absent.reduce((n, a) => n + doneCount(a), 0);
+    const total = absent.reduce((n, a) => n + needCount(a), 0);
+    const { absentList: _a, ...rest } = baseArgs;
+    void _a;
+    const next = autoFillAssignments({ ...rest, absentList: absent }, assigned);
+    writeBoard(b => ({ ...b, assigned: next }));
+    const after = absent.reduce(
+      (n, a) => n + periodsNeedingCover(data, a, dayIdx).filter(pi => next[a]?.[String(pi)]).length,
+      0
+    );
+    const filled = after - before;
+    const left = total - after;
+    setNotice(
+      filled === 0 && left === 0
+        ? 'Everything is already covered.'
+        : `Filled ${filled} period${filled === 1 ? '' : 's'}${left > 0 ? ` · ${left} still need someone (no free teacher)` : ''}.`
+    );
+  };
+
+  /* ---------- status of an assigned cell ---------- */
+  const cellIssue = (abs: string, pi: number): string => {
+    const sub = assigned[abs]?.[String(pi)];
+    if (!sub) return '';
+    const c = candidatesFor({ ...baseArgs, absentTeacher: abs, pi, assigned }).find(x => x.teacher === sub);
+    if (!c) {
+      if (absent.includes(sub)) return `${sub} is absent`;
+      if (onLeaveAll.includes(sub)) return `${sub} is on leave`;
+      if (!data.teachers.includes(sub)) return 'Teacher no longer exists';
+      return `${sub} is not available`;
+    }
+    if (c.busyWith) return `${sub} is teaching ${c.busyWith}`;
+    if (c.takenFor) return `${sub} also covers for ${c.takenFor}`;
+    return '';
+  };
+
+  /* ---------- rows for print / PNG / sheet ---------- */
+  const docRows = (abs: string): SubstituteDocRow[] =>
+    data.periods.map((p, pi) => {
+      const info = teachingAt(data, abs, pi, dayIdx).join(', ');
+      const empty: SubstituteDocRow = {
+        period: p, info: '', isFree: true, assigned: '', bestName: '', bestLoad: '', groupMatches: [], freeList: []
+      };
+      if (!info) return empty;
+      const cands = candidatesFor({ ...baseArgs, absentTeacher: abs, pi, assigned });
+      const free = cands.filter(c => c.available);
+      const byLoad = [...free].sort((x, y) => x.load + x.coversToday - (y.load + y.coversToday) || x.teacher.localeCompare(y.teacher));
+      const byGroup = [...free].sort((x, y) => x.tier - y.tier || x.load - y.load || x.teacher.localeCompare(y.teacher));
+      const best = byLoad[0];
       return {
         period: p,
-        info: assignments.join(", "),
+        info,
         isFree: false,
-        bestWorkload: best ? `${best.teacher} (${formatPeriodsDW(best.score, data.daysPerWeek, data.periodsDisplay)})` : "No free teacher",
-        bestName: best ? best.teacher : "",
-        bestLoad: best ? formatPeriodsDW(best.score, data.daysPerWeek, data.periodsDisplay) : "",
-        groupMatches: rankedByGroup.slice(0, 4),
-        freeTeachers: rankedByWorkload.map(x => `${x.teacher} (${formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay)})`),
-        freeList: rankedByWorkload.map(x => ({ teacher: x.teacher, load: formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay) }))
+        assigned: assigned[abs]?.[String(pi)] || '',
+        bestName: best ? best.teacher : '',
+        bestLoad: best ? fmtLoad(best.load + best.coversToday) : '',
+        groupMatches: byGroup.slice(0, 4).map(c => ({
+          teacher: c.teacher,
+          rank: data.teacherInfo[c.teacher]?.rank || '',
+          qual: data.teacherInfo[c.teacher]?.qual || ''
+        })),
+        freeList: byLoad.map(c => ({ teacher: c.teacher, load: fmtLoad(c.load + c.coversToday) }))
       };
     });
-  }, [
-    absentTeacher,
-    data.periods,
-    data.classes,
-    data.teachers,
-    data.teacherInfo,
-    data.substituteIncludeNonTeaching,
-    onLeaveAll,
-    dayIdx,
-    isDayInWeek,
-    getTeacherTotalPeriods,
-    data.daysPerWeek,
-    data.periodsDisplay
-  ]);
 
-  // Black-and-white sheet model shared by the print and the PNG export
   const buildSheetHtml = (variant: 'print' | 'png') =>
     buildSubstituteDoc(
       data,
       {
-        absentTeacher,
         dateLabel: leaveDate,
-        dayName: DAY_NAMES[dayIdx] || "",
+        dayName: DAY_NAMES[dayIdx] || '',
         otherLeaves,
         showWorkload: showWorkloadCol,
         showGroup: showGroupCol,
-        rows: substitutionRows.map(r => ({
-          period: r.period,
-          info: r.info,
-          isFree: r.isFree,
-          bestName: r.bestName,
-          bestLoad: r.bestLoad,
-          groupMatches: r.groupMatches.map(m => ({
-            teacher: m.teacher,
-            rank: m.info.rank,
-            qual: m.info.qual
-          })),
-          freeList: r.freeList
-        }))
+        absent: absent.map(a => ({ name: a, rows: docRows(a) }))
       },
       variant
     );
 
-  const handleSaveLongLeave = () => {
-    if (!llTeacher || !llFrom) {
-      alert("Please select teacher and from date.");
+  const handlePrint = () => {
+    if (!absent.length) {
+      alert('Add an absent teacher first.');
       return;
     }
-    if (llTo && llFrom > llTo) {
-      alert("From date must be before To date.");
-      return;
-    }
-
-    updateData(prev => {
-      let nextLong = [...(prev.longLeaves || [])];
-      if (editingLongLeaveId) {
-        nextLong = nextLong.map(ll =>
-          ll.id === editingLongLeaveId
-            ? { ...ll, teacher: llTeacher, from: llFrom, to: llTo, reason: llReason }
-            : ll
-        );
-      } else {
-        const id = `ll_${Date.now().toString(36)}`;
-        nextLong.push({ id, teacher: llTeacher, from: llFrom, to: llTo, reason: llReason });
-      }
-      return { ...prev, longLeaves: nextLong };
-    });
-
-    setShowLongLeaveForm(false);
-    setEditingLongLeaveId(null);
-    setLlReason("");
-    setLlTo("");
-  };
-
-  const handleRemoveLongLeave = (id: string) => {
-    updateData(prev => ({
-      ...prev,
-      longLeaves: (prev.longLeaves || []).filter(ll => ll.id !== id)
-    }));
-  };
-
-  const handleToggleShortLeave = (teacher: string, checked: boolean) => {
-    const cur = onLeaveAll.filter(t => !longLeavesOnDate.some(ll => ll.teacher === t));
-    let next: string[];
-    if (checked) {
-      next = [...cur, teacher];
-    } else {
-      next = cur.filter(t => t !== teacher);
-    }
-    setLeavesForDate(leaveDate, next);
-  };
-
-  const handlePrintSubstitute = () => {
     triggerPrint(buildSheetHtml('print'), { orientation: 'portrait', printSize: 'm' });
   };
 
-  const handleExportImage = async (_share?: boolean) => {
-    if (!absentTeacher) {
-      alert("Please select an absent teacher first.");
+  const handleExportImage = async () => {
+    if (!absent.length) {
+      alert('Add an absent teacher first.');
       return;
     }
     setIsExporting(true);
     try {
       const canvas = await createTimetableCanvas('substitute', data, {
-        selectedClass: "",
-        selectedTeacher: absentTeacher,
-        absentTeacher,
+        selectedClass: '',
+        selectedTeacher: absent[0],
+        absentTeacher: absent[0],
         teacherPeriodSummary,
         teacherTotalPeriods: getTeacherTotalPeriods,
         getLeavesForDate,
         docHtml: buildSheetHtml('png')
       });
-
-      const stamp = dateKey();
-      const safeName = (absentTeacher || "absent").replace(/\s+/g, "-");
-      const fileName = `TimetableGrid-Substitute-${safeName}-${stamp}.png`;
-      const title = `Substitute Board — ${absentTeacher}`;
-
-      await shareOrDownloadCanvas(canvas, fileName, title);
+      const safeName = absent.map(a => a.replace(/\s+/g, '-')).join('_');
+      const fileName = `TimetableGrid-Substitute-${safeName}-${leaveDate}.png`;
+      await shareOrDownloadCanvas(canvas, fileName, `Substitute Board — ${absent.join(', ')}`);
     } catch (err) {
-      console.error("Substitute image export error:", err);
-      alert("Failed to generate substitute board image.");
+      console.error('Substitute image export error:', err);
+      alert('Failed to generate substitute board image.');
     } finally {
       setIsExporting(false);
     }
   };
 
-  return (
-    <div className="space-y-4">
-      {/* ============================== 1. CONFIGURATION ============================== */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl p-5 border border-stone-200 dark:border-stone-800 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
-              Absence &amp; Cover Planning
-            </span>
-            <h2 className="text-lg font-black text-stone-900 dark:text-stone-100 tracking-tight">
-              Substitute Board
-            </h2>
-          </div>
+  /* ---------- leaves actions ---------- */
+  const handleToggleShortLeave = (teacher: string, checked: boolean) => {
+    const cur = onLeaveAll.filter(t => !longLeavesOnDate.some(ll => ll.teacher === t));
+    setLeavesForDate(leaveDate, checked ? [...cur, teacher] : cur.filter(t => t !== teacher));
+  };
 
-          <div className="flex items-center gap-2 flex-wrap">
+  const handleSaveLongLeave = () => {
+    if (!llTeacher || !llFrom) {
+      alert('Please select teacher and from date.');
+      return;
+    }
+    if (llTo && llFrom > llTo) {
+      alert('From date must be before To date.');
+      return;
+    }
+    updateData(prev => {
+      let nextLong = [...(prev.longLeaves || [])];
+      if (editingLongLeaveId) {
+        nextLong = nextLong.map(ll =>
+          ll.id === editingLongLeaveId ? { ...ll, teacher: llTeacher, from: llFrom, to: llTo, reason: llReason } : ll
+        );
+      } else {
+        nextLong.push({ id: `ll_${Date.now().toString(36)}`, teacher: llTeacher, from: llFrom, to: llTo, reason: llReason });
+      }
+      return { ...prev, longLeaves: nextLong };
+    });
+    setShowLongLeaveForm(false);
+    setEditingLongLeaveId(null);
+    setLlReason('');
+    setLlTo('');
+  };
+
+  const handleRemoveLongLeave = (id: string) =>
+    updateData(prev => ({ ...prev, longLeaves: (prev.longLeaves || []).filter(ll => ll.id !== id) }));
+
+  /* ---------- derived: on leave but not on the absent list ---------- */
+  const needsCoverNotAdded = useMemo(
+    () =>
+      onLeaveAll.filter(
+        t => data.teachers.includes(t) && !absent.includes(t) && periodsNeedingCover(data, t, dayIdx).length > 0
+      ),
+    [onLeaveAll, absent, data, dayIdx]
+  );
+
+  /* ============================== PIECES ============================== */
+  const renderTags = (c: Candidate, isBest: boolean) => (
+    <>
+      {isBest && <Tag>Best</Tag>}
+      {c.available && rules.group && tierLabel(c.tier) && <Tag>{tierLabel(c.tier)}</Tag>}
+      {c.available && c.coversToday > 0 && <Tag warn>{c.coversToday} today</Tag>}
+    </>
+  );
+
+  const renderAssign = () => (
+    <div className="space-y-4">
+      <div className={`${CARD} p-4 flex items-center justify-between gap-3`}>
+        <p className="text-xs text-stone-500 min-w-0">
+          Pick a teacher for each period, or let Auto-fill choose the best free teacher for every empty period.
+        </p>
+        <button
+          type="button"
+          onClick={handleAutoFill}
+          disabled={!absent.length}
+          className="shrink-0 px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Auto-fill all</span>
+        </button>
+      </div>
+
+      {notice && (
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl text-xs text-emerald-900 dark:text-emerald-200 font-semibold">
+          {notice}
+        </div>
+      )}
+
+      {needsCoverNotAdded.length > 0 && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-xs text-amber-900 dark:text-amber-200 space-y-2">
+          <div className="font-semibold">On leave today and teaching, but not in the absent list:</div>
+          <div className="flex flex-wrap gap-2">
+            {needsCoverNotAdded.map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => addAbsent(t)}
+                className="px-2.5 py-1 rounded-full bg-white dark:bg-stone-900 border border-amber-300 dark:border-amber-800 font-bold"
+              >
+                + {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!absent.length && (
+        <div className={`${CARD} p-5 text-xs text-stone-500`}>Add an absent teacher to start.</div>
+      )}
+
+      {absent.map(a => {
+        const need = periodsNeedingCover(data, a, dayIdx);
+        const done = need.filter(pi => assigned[a]?.[String(pi)]).length;
+        const freePeriods = data.periods.filter((_, pi) => !need.includes(pi));
+        return (
+          <div key={a} className={`${CARD} p-4`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-black text-stone-900 dark:text-stone-100 truncate">{a}</div>
+                <div className="text-[11px] text-stone-500">{infoLine(a) || 'No group set'}</div>
+              </div>
+              {done > 0 && (
+                <button
+                  type="button"
+                  onClick={() => clearAssignments(a)}
+                  className="text-xs font-bold text-rose-600 hover:underline shrink-0"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div className="h-1.5 bg-stone-200 dark:bg-stone-800 rounded-full overflow-hidden mt-3">
+              <div
+                className="h-full bg-emerald-700 transition-all"
+                style={{ width: `${need.length ? (done / need.length) * 100 : 0}%` }}
+              />
+            </div>
+            <div className="text-[11px] text-stone-500 mt-1">
+              {need.length ? `${done} of ${need.length} periods covered` : 'No periods to cover on this date'}
+            </div>
+
+            <div className="mt-2">
+              {need.map(pi => {
+                const sub = assigned[a]?.[String(pi)];
+                const issue = cellIssue(a, pi);
+                return (
+                  <div key={pi} className="py-2.5 border-t border-stone-100 dark:border-stone-800/70">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 grid place-items-center font-black text-xs shrink-0">
+                        P{data.periods[pi]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-bold text-stone-900 dark:text-stone-100 truncate">
+                          {teachingAt(data, a, pi, dayIdx).join(', ')}
+                        </div>
+                        <div className="text-[11px] text-stone-500">needs cover</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickSearch('');
+                          setPick({ abs: a, pi });
+                        }}
+                        className={`min-w-28 max-w-40 truncate px-3 py-2 rounded-xl text-[13px] text-left font-bold border transition ${
+                          sub && issue
+                            ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-900 text-rose-700 dark:text-rose-300'
+                            : sub
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 border-transparent text-emerald-800 dark:text-emerald-300'
+                            : 'bg-stone-50 dark:bg-stone-950 border-dashed border-stone-300 dark:border-stone-700 text-stone-500 font-semibold'
+                        }`}
+                      >
+                        {sub || 'Pick teacher'}
+                      </button>
+                    </div>
+                    {issue && (
+                      <div className="mt-1.5 ml-12 flex items-start gap-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-px" />
+                        <span>{issue}. Pick someone else.</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {need.length > 0 && freePeriods.length > 0 && (
+              <div className="text-[11px] text-stone-400 mt-1 pt-2 border-t border-stone-100 dark:border-stone-800/70">
+                Free: {freePeriods.map(p => `P${p}`).join(', ')} · no cover needed
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const renderSheet = () => {
+    if (!absent.length) return <div className={`${CARD} p-5 text-xs text-stone-500`}>Add an absent teacher first.</div>;
+    const rowsNeeded = data.periods
+      .map((p, pi) => ({ p, pi }))
+      .filter(({ pi }) => absent.some(a => teachingAt(data, a, pi, dayIdx).length > 0));
+    return (
+      <div className={`${CARD} p-4`}>
+        <div className="flex items-center justify-between mb-3">
+          <b className="text-sm text-stone-900 dark:text-stone-100">Substitute sheet</b>
+          <span className="text-[11px] text-stone-500">{DAY_NAMES[dayIdx] ? `${DAY_NAMES[dayIdx]}, ` : ''}{leaveDate}</span>
+        </div>
+        {rowsNeeded.length === 0 ? (
+          <div className="text-xs text-stone-500">No periods need cover on this date.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-stone-100 dark:bg-stone-800">
+                  <th className="py-2.5 px-3 font-bold text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700">Period</th>
+                  {absent.map(a => (
+                    <th key={a} className="py-2.5 px-3 font-bold text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700">{a}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rowsNeeded.map(({ p, pi }) => (
+                  <tr key={pi}>
+                    <td className="py-2.5 px-3 font-bold border border-stone-200 dark:border-stone-700">P{p}</td>
+                    {absent.map(a => {
+                      const info = teachingAt(data, a, pi, dayIdx).join(', ');
+                      const sub = assigned[a]?.[String(pi)];
+                      return (
+                        <td key={a} className="py-2.5 px-3 align-top border border-stone-200 dark:border-stone-700">
+                          {!info ? (
+                            <span className="text-stone-400">—</span>
+                          ) : sub ? (
+                            <>
+                              <b className="text-stone-900 dark:text-stone-100">{sub}</b>
+                              <div className="text-[11px] text-stone-500">{info}</div>
+                            </>
+                          ) : (
+                            <span className="text-rose-600 font-semibold">Not assigned</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex gap-2 mt-4">
+          <button type="button" onClick={handlePrint} className="flex-1 px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+            <Printer className="w-3.5 h-3.5" /> Print
+          </button>
+          <button type="button" onClick={handleExportImage} disabled={isExporting} className={`${BTN_SOFT} flex-1 justify-center`}>
+            <Share2 className="w-3.5 h-3.5" /> {isExporting ? '…' : 'Share'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLoad = () => {
+    const covers: Record<string, string[]> = {};
+    absent.forEach(a => {
+      Object.entries(assigned[a] || {}).forEach(([pi, t]) => {
+        (covers[t] = covers[t] || []).push(`P${data.periods[Number(pi)]} for ${a}`);
+      });
+    });
+    const names = Object.keys(covers).sort((x, y) => covers[y].length - covers[x].length || x.localeCompare(y));
+    return (
+      <div className={`${CARD} p-4`}>
+        <b className="text-sm text-stone-900 dark:text-stone-100">Who is covering on this date</b>
+        <p className="text-xs text-stone-500 mb-3">Check that the extra load stays fair.</p>
+        {names.length === 0 ? (
+          <div className="text-xs text-stone-400 italic">No cover assigned yet.</div>
+        ) : (
+          <div className="divide-y divide-stone-100 dark:divide-stone-800/60">
+            {names.map(t => (
+              <div key={t} className="py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-sm text-stone-900 dark:text-stone-100">{t}</span>
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300">
+                    {covers[t].length} cover{covers[t].length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="text-[11px] text-stone-500 mt-0.5">
+                  Own load {fmtLoad(getTeacherTotalPeriods(t))} · {covers[t].join(', ')}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderLeaves = () => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-1 p-1 bg-stone-200/70 dark:bg-stone-800 rounded-2xl">
+        {(['short', 'long'] as const).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setLeaveMode(m)}
+            className={`min-h-[38px] rounded-xl text-xs font-bold transition ${
+              leaveMode === m
+                ? 'bg-white dark:bg-stone-700 text-emerald-800 dark:text-emerald-300 shadow-xs'
+                : 'text-stone-600 dark:text-stone-300'
+            }`}
+          >
+            {m === 'short' ? 'Short leave (this date)' : 'Long leave'}
+          </button>
+        ))}
+      </div>
+
+      {leaveMode === 'short' ? (
+        <div className={`${CARD} p-4`}>
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <div>
+              <b className="text-sm text-stone-900 dark:text-stone-100">On leave — {leaveDate}</b>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Teachers marked here are never suggested as substitutes. Tap Needs cover if their periods must be covered.
+              </p>
+            </div>
+            {onLeaveAll.length > longLeavesOnDate.length && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!confirm('Clear all short leaves for this date?')) return;
+                  setLeavesForDate(leaveDate, []);
+                }}
+                className="text-xs font-bold text-rose-600 hover:underline shrink-0"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+          <div className="divide-y divide-stone-100 dark:divide-stone-800/60">
+            {data.teachers.map(t => {
+              const isLong = longLeavesOnDate.some(ll => ll.teacher === t);
+              const isShort = onLeaveAll.includes(t) && !isLong;
+              const onLeave = isLong || isShort;
+              const teachesToday = periodsNeedingCover(data, t, dayIdx).length > 0;
+              const inList = absent.includes(t);
+              return (
+                <div key={t} className="flex items-center gap-3 py-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold text-stone-900 dark:text-stone-100 truncate">{t}</div>
+                    <div className="text-[11px] text-stone-500 truncate">
+                      {infoLine(t) || 'No group set'}
+                      {inList ? ' · in absent list' : ''}
+                      {isLong ? ' · long leave' : ''}
+                    </div>
+                  </div>
+                  {onLeave && !inList && teachesToday && (
+                    <button type="button" onClick={() => addAbsent(t)} className="text-xs font-bold text-emerald-800 dark:text-emerald-400 px-1">
+                      Needs cover
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={onLeave}
+                    aria-label={`On leave: ${t}`}
+                    disabled={isLong}
+                    onClick={() => handleToggleShortLeave(t, !isShort)}
+                    className={`relative w-11 h-6 rounded-full shrink-0 transition ${
+                      onLeave ? 'bg-emerald-700' : 'bg-stone-300 dark:bg-stone-700'
+                    } ${isLong ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  >
+                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${onLeave ? 'left-5.5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className={`${CARD} p-4`}>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div>
+              <b className="text-sm text-stone-900 dark:text-stone-100">Long-term leaves ({data.longLeaves.length})</b>
+              <p className="text-xs text-stone-500">Staff on extended medical, pilgrimage, or duty leave</p>
+            </div>
             <button
               type="button"
-              onClick={handlePrintSubstitute}
-              className="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+              onClick={() => {
+                setShowLongLeaveForm(!showLongLeaveForm);
+                setEditingLongLeaveId(null);
+              }}
+              className={BTN_SOFT}
             >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{showLongLeaveForm ? 'Close' : 'Add'}</span>
+            </button>
+          </div>
+
+          {showLongLeaveForm && (
+            <div className="p-4 bg-stone-50 dark:bg-stone-950/60 rounded-2xl border border-stone-200 dark:border-stone-800 mb-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={LABEL}>Teacher</label>
+                  <select value={llTeacher} onChange={e => setLlTeacher(e.target.value)} className={INPUT}>
+                    {data.teachers.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={LABEL}>Reason (optional)</label>
+                  <input type="text" value={llReason} onChange={e => setLlReason(e.target.value)} placeholder="e.g. Medical / Hajj / Training" className={INPUT} />
+                </div>
+                <div>
+                  <label className={LABEL}>From date *</label>
+                  <input type="date" value={llFrom} onChange={e => setLlFrom(e.target.value)} className={INPUT} />
+                </div>
+                <div>
+                  <label className={LABEL}>To date (empty if open-ended)</label>
+                  <input type="date" value={llTo} onChange={e => setLlTo(e.target.value)} className={INPUT} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={handleSaveLongLeave} className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold">
+                  {editingLongLeaveId ? 'Update leave' : 'Save leave'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLongLeaveForm(false);
+                    setEditingLongLeaveId(null);
+                  }}
+                  className="px-4 py-2 bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {data.longLeaves.length === 0 ? (
+            <div className="text-xs text-stone-400 italic py-2">No long-term leaves active.</div>
+          ) : (
+            <div className="divide-y divide-stone-100 dark:divide-stone-800/60">
+              {data.longLeaves.map(ll => {
+                const activeNow = leaveDate >= ll.from && (!ll.to || leaveDate <= ll.to);
+                const inList = absent.includes(ll.teacher);
+                const teachesToday = periodsNeedingCover(data, ll.teacher, dayIdx).length > 0;
+                return (
+                  <div key={ll.id} className="py-2.5 flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-bold text-stone-900 dark:text-stone-100 truncate">{ll.teacher}</div>
+                      <div className="text-stone-500">
+                        {ll.from} → {ll.to || 'open-ended'}
+                        {ll.reason && <span className="text-emerald-700 dark:text-emerald-400 font-semibold"> ({ll.reason})</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {activeNow && <Tag>Active</Tag>}
+                      {activeNow && !inList && teachesToday && (
+                        <button type="button" onClick={() => addAbsent(ll.teacher)} className="text-xs font-bold text-emerald-800 dark:text-emerald-400 px-1">
+                          Needs cover
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label="Edit leave"
+                        onClick={() => {
+                          setEditingLongLeaveId(ll.id);
+                          setLlTeacher(ll.teacher);
+                          setLlFrom(ll.from);
+                          setLlTo(ll.to);
+                          setLlReason(ll.reason);
+                          setShowLongLeaveForm(true);
+                        }}
+                        className="p-1.5 text-stone-500 hover:text-stone-800"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" aria-label="Remove leave" onClick={() => handleRemoveLongLeave(ll.id)} className="p-1.5 text-rose-600 hover:text-rose-800">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderDetails = () => {
+    if (!absent.length) return <div className={`${CARD} p-5 text-xs text-stone-500`}>Add an absent teacher first.</div>;
+    return (
+      <div className="space-y-4">
+        {absent.map(a => (
+          <div key={a} className={`${CARD} overflow-hidden`}>
+            <div className="p-4 border-b border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-800 dark:text-stone-200">Coverage details: {a}</h3>
+              <p className="text-[11px] text-stone-500">Best by workload, best by group, and everyone free, ignoring picks already made.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-800">
+                  <tr>
+                    <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300 w-36">Period</th>
+                    {showWorkloadCol && <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300 w-44">Recommended (workload)</th>}
+                    {showGroupCol && <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300 w-52">By group (1–4 match)</th>}
+                    <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300">Free staff</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 dark:divide-stone-800/60">
+                  {periodsNeedingCover(data, a, dayIdx).map(pi => {
+                    const free = candidatesFor({ ...baseArgs, absentTeacher: a, pi, assigned: {} }).filter(c => c.available);
+                    const byLoad = [...free].sort((x, y) => x.load - y.load || x.teacher.localeCompare(y.teacher));
+                    const byGroup = [...free].sort((x, y) => x.tier - y.tier || x.load - y.load || x.teacher.localeCompare(y.teacher)).slice(0, 4);
+                    return (
+                      <tr key={pi}>
+                        <td className="py-3 px-3.5 font-bold align-top">
+                          <div className="text-stone-900 dark:text-stone-100">Period {data.periods[pi]}</div>
+                          <div className="text-[11px] text-stone-500 font-semibold mt-0.5">{teachingAt(data, a, pi, dayIdx).join(', ')}</div>
+                        </td>
+                        {showWorkloadCol && (
+                          <td className="py-3 px-3.5 align-top font-bold text-emerald-800 dark:text-emerald-400">
+                            {byLoad[0] ? `${byLoad[0].teacher} (${fmtLoad(byLoad[0].load)})` : 'No free teacher'}
+                          </td>
+                        )}
+                        {showGroupCol && (
+                          <td className="py-3 px-3.5 align-top">
+                            {byGroup.length === 0 ? <span className="text-stone-400">—</span> : byGroup.map((c, i) => (
+                              <div key={c.teacher} className="text-[11px] leading-tight mb-1">
+                                <span className="font-bold text-stone-900 dark:text-stone-100">{i + 1}. {c.teacher}</span>
+                                <span className="text-stone-400 ml-1">({infoLine(c.teacher) || 'No group'})</span>
+                              </div>
+                            ))}
+                          </td>
+                        )}
+                        <td className="py-3 px-3.5 align-top text-[11px] text-stone-600 dark:text-stone-400 leading-normal">
+                          {byLoad.map(c => `${c.teacher} (${fmtLoad(c.load)})`).join(', ') || 'No teachers available'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  /* ---------- pick sheet ---------- */
+  const renderPickSheet = () => {
+    if (!pick) return null;
+    const { abs, pi } = pick;
+    const cur = assigned[abs]?.[String(pi)];
+    const list = candidatesFor({ ...baseArgs, absentTeacher: abs, pi, assigned });
+    const bestTeacher = list.find(c => c.available)?.teacher;
+    const q = pickSearch.trim().toLowerCase();
+    const shown = q ? list.filter(c => c.teacher.toLowerCase().includes(q)) : list;
+    const close = () => setPick(null);
+    return (
+      <Sheet title={`Cover P${data.periods[pi]} for ${abs}`} subtitle={teachingAt(data, abs, pi, dayIdx).join(', ')} onClose={close}>
+        <SearchBox value={pickSearch} onChange={setPickSearch} placeholder="Search teacher" />
+        <div className="flex-1 overflow-y-auto p-2 divide-y divide-stone-100 dark:divide-stone-800/60">
+          {cur && (
+            <button
+              type="button"
+              onClick={() => { setCover(abs, pi, null); close(); }}
+              className="w-full min-h-[48px] px-4 py-3 text-left text-sm font-bold text-rose-600 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30"
+            >
+              Remove {cur}
+            </button>
+          )}
+          {shown.map(c => {
+            const reason = c.busyWith
+              ? `Teaching ${c.busyWith}`
+              : c.takenFor
+              ? `Already covering for ${c.takenFor} this period`
+              : `${c.coversToday ? `Already covering ${c.coversToday} today` : 'Free'} · load ${fmtLoad(c.load)}`;
+            return (
+              <button
+                key={c.teacher}
+                type="button"
+                disabled={!c.available}
+                onClick={() => { setCover(abs, pi, c.teacher); close(); }}
+                className={`w-full min-h-[52px] px-4 py-2.5 flex items-center gap-2 text-left rounded-xl transition ${
+                  !c.available
+                    ? 'opacity-45 cursor-not-allowed'
+                    : c.teacher === cur
+                    ? 'bg-emerald-700 text-white'
+                    : 'hover:bg-stone-200/60 dark:hover:bg-stone-800/60'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold truncate">{c.teacher}</div>
+                  <div className={`text-[11px] truncate ${c.teacher === cur ? 'text-emerald-100' : 'text-stone-500'}`}>
+                    {infoLine(c.teacher) || 'No group'} · {reason}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">{renderTags(c, c.teacher === bestTeacher)}</div>
+                {c.teacher === cur && <Check className="w-4 h-4 shrink-0" />}
+              </button>
+            );
+          })}
+          {shown.length === 0 && <div className="p-8 text-center text-sm text-stone-400">No matching teachers.</div>}
+        </div>
+      </Sheet>
+    );
+  };
+
+  const renderAddSheet = () => {
+    if (!addOpen) return null;
+    const q = addSearch.trim().toLowerCase();
+    const list = data.teachers.filter(t => !absent.includes(t) && (!q || t.toLowerCase().includes(q)));
+    return (
+      <Sheet title="Who is absent?" onClose={() => setAddOpen(false)} closeLabel="Done">
+        <SearchBox value={addSearch} onChange={setAddSearch} placeholder="Search teacher" />
+        <div className="flex-1 overflow-y-auto p-2 divide-y divide-stone-100 dark:divide-stone-800/60">
+          {list.map(t => {
+            const n = periodsNeedingCover(data, t, dayIdx).length;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => addAbsent(t)}
+                className="w-full min-h-[52px] px-4 py-2.5 flex items-center gap-2 text-left rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800/60"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-stone-900 dark:text-stone-100 truncate">{t}</div>
+                  <div className="text-[11px] text-stone-500 truncate">
+                    {infoLine(t) || 'No group'} · {n ? `${n} period${n > 1 ? 's' : ''} this day` : 'no periods this day'}
+                  </div>
+                </div>
+                {onLeaveAll.includes(t) && <Tag warn>On leave</Tag>}
+              </button>
+            );
+          })}
+          {list.length === 0 && <div className="p-8 text-center text-sm text-stone-400">No more teachers to add.</div>}
+        </div>
+      </Sheet>
+    );
+  };
+
+  /* ============================== RENDER ============================== */
+  return (
+    <div className="space-y-4">
+      <div className={`${CARD} p-5`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">Absence &amp; Cover Planning</span>
+            <h2 className="text-lg font-black text-stone-900 dark:text-stone-100 tracking-tight">Substitute Board</h2>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={handlePrint} className="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5">
               <Printer className="w-3.5 h-3.5" />
               <span>Print</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => handleExportImage(false)}
-              disabled={isExporting}
-              className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
-              title="Download PNG"
-            >
+            <button type="button" onClick={handleExportImage} disabled={isExporting} className={BTN_SOFT} title="Download PNG">
               <Download className="w-3.5 h-3.5" />
-              <span>{isExporting ? "…" : "PNG"}</span>
+              <span>{isExporting ? '…' : 'PNG'}</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => handleExportImage(true)}
-              disabled={isExporting}
-              className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
-              title="Share via WhatsApp / Android"
-            >
+            <button type="button" onClick={handleExportImage} disabled={isExporting} className={BTN_SOFT} title="Share via WhatsApp / Android">
               <Share2 className="w-3.5 h-3.5" />
               <span>Share</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-          <div>
-            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-              Absence Date
-            </label>
-            <input
-              type="date"
-              value={leaveDate}
-              onChange={(e) => {
-                setLeaveDate(e.target.value);
-                updateData(prev => ({ ...prev, leaveDate: e.target.value }));
-              }}
-              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-600"
-            />
-          </div>
+        <div className="mt-4">
+          <label className={LABEL}>Absence date</label>
+          <input
+            type="date"
+            value={leaveDate}
+            onChange={e => {
+              setLeaveDate(e.target.value);
+              updateData(prev => ({ ...prev, leaveDate: e.target.value }));
+            }}
+            className={INPUT}
+          />
+        </div>
 
-          <div>
-            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-              Absent Teacher *
-            </label>
-            <select
-              value={absentTeacher}
-              onChange={(e) => {
-                setAbsentTeacher(e.target.value);
-                localStorage.setItem("utAbsentTeacher", e.target.value);
-              }}
-              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-bold text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-600"
+        <div className="mt-4">
+          <label className={LABEL}>Absent teachers</label>
+          <div className="flex flex-wrap gap-2">
+            {absent.map(a => (
+              <span key={a} className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 rounded-full pl-3 pr-1.5 py-1 text-[13px] font-bold">
+                {a}
+                <button
+                  type="button"
+                  aria-label={`Remove ${a}`}
+                  onClick={() => {
+                    if (doneCount(a) > 0 && !confirm(`Remove ${a}? Their ${doneCount(a)} saved cover pick(s) will be cleared.`)) return;
+                    removeAbsent(a);
+                  }}
+                  className="w-5 h-5 grid place-items-center rounded-full bg-black/10 dark:bg-white/10"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setAddSearch(''); setAddOpen(true); }}
+              className="px-3 py-1 rounded-full border border-dashed border-emerald-700 text-emerald-800 dark:text-emerald-400 text-[13px] font-bold"
             >
-              {data.teachers.map(t => {
-                const info = data.teacherInfo[t] || { qual: "", rank: "" };
-                const extra = [info.rank, info.qual].filter(Boolean).join(" ");
-                return (
-                  <option key={t} value={t}>
-                    {t} {extra ? `(${extra})` : ''}
-                  </option>
-                );
-              })}
-            </select>
+              + Add teacher
+            </button>
           </div>
         </div>
 
-        <div className="mt-4 space-y-2 border-t border-stone-200 dark:border-stone-800 pt-4">
-          <label className="flex items-center gap-2 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer">
-            <input type="checkbox"
-              checked={data.substituteRecommendWorkload !== false}
-              onChange={(e) => updateData(prev => ({ ...prev, substituteRecommendWorkload: e.target.checked }))}
-              className="rounded text-emerald-800 focus:ring-emerald-700" />
-            <span>Recommend by workload (lowest total load first)</span>
-          </label>
-          <label className="flex items-center gap-2 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer">
-            <input type="checkbox"
-              checked={data.substituteRecommendGroup !== false}
-              onChange={(e) => updateData(prev => ({ ...prev, substituteRecommendGroup: e.target.checked }))}
-              className="rounded text-emerald-800 focus:ring-emerald-700" />
-            <span>Recommend by group &amp; grade match</span>
-          </label>
-          <label className="flex items-center gap-2 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer">
-            <input type="checkbox"
-              checked={data.substituteIncludeNonTeaching}
-              onChange={(e) => updateData(prev => ({ ...prev, substituteIncludeNonTeaching: e.target.checked }))}
-              className="rounded text-emerald-800 focus:ring-emerald-700" />
-            <span>Include non-teaching staff (Principal, Head, etc.)</span>
-          </label>
-        </div>
+        <details className="mt-4 group">
+          <summary className="cursor-pointer text-[13px] font-bold text-stone-800 dark:text-stone-200">Suggestion rules</summary>
+          <div className="mt-2 space-y-2">
+            <RuleCheck checked={showWorkloadCol} label="Prefer lowest workload" onChange={v => updateData(prev => ({ ...prev, substituteRecommendWorkload: v }))} />
+            <RuleCheck checked={showGroupCol} label="Prefer same group & grade" onChange={v => updateData(prev => ({ ...prev, substituteRecommendGroup: v }))} />
+            <RuleCheck checked={!!data.substituteIncludeNonTeaching} label="Include non-teaching staff (Principal, Head, etc.)" onChange={v => updateData(prev => ({ ...prev, substituteIncludeNonTeaching: v }))} />
+          </div>
+        </details>
 
         {!isDayInWeek && (
           <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-xs text-amber-900 dark:text-amber-200 font-medium">
@@ -495,339 +1053,99 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
         )}
       </div>
 
-      {/* ============================== 2. SINGLE-DAY SHORT LEAVES (collapsible) ============================== */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 shadow-xs overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShortLeavesOpen(o => !o)}
-          className="w-full flex items-center justify-between gap-3 p-5 text-left hover:bg-stone-50 dark:hover:bg-stone-800/30 transition"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded-xl shrink-0">
-              <Users className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 truncate">
-                Single-Day Short Leaves — {leaveDate}
-              </h3>
-              <p className="text-xs text-stone-500">
-                {onLeaveAll.length > 0
-                  ? `${onLeaveAll.length} teacher${onLeaveAll.length === 1 ? '' : 's'} marked absent on this date`
-                  : 'No teachers marked absent on this date'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-              onLeaveAll.length > 0
-                ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
-                : 'bg-stone-100 dark:bg-stone-800 text-stone-500'
-            }`}>
-              {onLeaveAll.length} selected
-            </span>
-            <ChevronDown
-              className={`w-4 h-4 text-stone-500 transition-transform ${shortLeavesOpen ? 'rotate-180' : ''}`}
-            />
-          </div>
-        </button>
-
-        {shortLeavesOpen && (
-          <div className="px-5 pb-5 border-t border-stone-200 dark:border-stone-800 pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-stone-500">
-                Check teachers who are absent on this date. Teachers on long leave are locked.
-              </p>
-              {onLeaveAll.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!confirm('Clear all short leaves for this date?')) return;
-                    setLeavesForDate(leaveDate, []);
-                  }}
-                  className="text-xs font-bold text-rose-600 hover:underline shrink-0 ml-3"
-                >
-                  Clear all
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-              {data.teachers.map(t => {
-                const isLong = longLeavesOnDate.some(ll => ll.teacher === t);
-                const isChecked = onLeaveAll.includes(t);
-
-                return (
-                  <label
-                    key={t}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
-                      isLong
-                        ? 'bg-stone-100 dark:bg-stone-800/80 border-stone-300 dark:border-stone-700 opacity-80 cursor-not-allowed'
-                        : isChecked
-                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
-                        : 'bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      disabled={isLong}
-                      onChange={(e) => handleToggleShortLeave(t, e.target.checked)}
-                      className="rounded text-emerald-800 focus:ring-emerald-700 shrink-0"
-                    />
-                    <span className="truncate">{t}</span>
-                    {isLong && <span className="text-[10px] text-stone-400 shrink-0">(Long)</span>}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ============================== 3. LONG-TERM LEAVES ============================== */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl p-5 border border-stone-200 dark:border-stone-800 shadow-xs">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div>
-            <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">
-              Long-Term Leaves ({data.longLeaves.length})
-            </h3>
-            <p className="text-xs text-stone-500">
-              Staff on extended medical, pilgrimage, or duty leave
-            </p>
-          </div>
-
+      <div role="tablist" aria-label="Substitute sections" className="grid grid-cols-5 gap-1 p-1 bg-stone-200/70 dark:bg-stone-800 rounded-2xl">
+        {TABS.map(t => (
           <button
+            key={t.id}
             type="button"
-            onClick={() => {
-              setShowLongLeaveForm(!showLongLeaveForm);
-              setEditingLongLeaveId(null);
-            }}
-            className="px-3.5 py-1.5 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`min-h-[38px] px-1 rounded-xl text-xs font-bold transition ${
+              tab === t.id
+                ? 'bg-emerald-800 dark:bg-emerald-700 text-white shadow-xs'
+                : 'text-stone-600 dark:text-stone-300 hover:bg-white/70 dark:hover:bg-stone-700'
+            }`}
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{showLongLeaveForm ? "Close Form" : "Add Long Leave"}</span>
+            {t.label}
           </button>
-        </div>
-
-        {showLongLeaveForm && (
-          <div className="p-4 bg-stone-50 dark:bg-stone-950/60 rounded-2xl border border-stone-200 dark:border-stone-800 mb-4 space-y-3 animate-in fade-in duration-150">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                  Teacher
-                </label>
-                <select
-                  value={llTeacher}
-                  onChange={(e) => setLlTeacher(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-bold"
-                >
-                  {data.teachers.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                  Reason (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={llReason}
-                  onChange={(e) => setLlReason(e.target.value)}
-                  placeholder="e.g. Medical / Hajj / Training"
-                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-xl text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                  From Date *
-                </label>
-                <input
-                  type="date"
-                  value={llFrom}
-                  onChange={(e) => setLlFrom(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                  To Date (Leave empty if open-ended)
-                </label>
-                <input
-                  type="date"
-                  value={llTo}
-                  onChange={(e) => setLlTo(e.target.value)}
-                  className="w-full px-3 py-2 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={handleSaveLongLeave}
-                className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold"
-              >
-                {editingLongLeaveId ? "Update Leave" : "Save Leave"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLongLeaveForm(false);
-                  setEditingLongLeaveId(null);
-                }}
-                className="px-4 py-2 bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300 rounded-xl text-xs font-bold"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {data.longLeaves.length === 0 ? (
-          <div className="text-xs text-stone-400 italic py-2">
-            No long-term leaves active.
-          </div>
-        ) : (
-          <div className="divide-y divide-stone-100 dark:divide-stone-800/60">
-            {data.longLeaves.map(ll => (
-              <div key={ll.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
-                <div>
-                  <span className="font-bold text-stone-900 dark:text-stone-100">{ll.teacher}</span>
-                  <span className="text-stone-500 ml-2">
-                    {ll.from} → {ll.to || "Open-ended"}
-                  </span>
-                  {ll.reason && (
-                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold ml-2">
-                      ({ll.reason})
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingLongLeaveId(ll.id);
-                      setLlTeacher(ll.teacher);
-                      setLlFrom(ll.from);
-                      setLlTo(ll.to);
-                      setLlReason(ll.reason);
-                      setShowLongLeaveForm(true);
-                    }}
-                    className="p-1.5 text-stone-500 hover:text-stone-800"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveLongLeave(ll.id)}
-                    className="p-1.5 text-rose-600 hover:text-rose-800"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        ))}
       </div>
 
-      {/* ============================== 4. COVERAGE RECOMMENDATION ============================== */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-xs">
-        <div className="p-4 border-b border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-800 dark:text-stone-200">
-              Coverage Recommendation Table
-            </h3>
-            <p className="text-[11px] text-stone-500">
-              Matching workload and group (Science/Arts/IT) for {absentTeacher}
-            </p>
-          </div>
-        </div>
+      {tab === 'assign' && renderAssign()}
+      {tab === 'sheet' && renderSheet()}
+      {tab === 'load' && renderLoad()}
+      {tab === 'leaves' && renderLeaves()}
+      {tab === 'details' && renderDetails()}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-stone-100 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-800">
-              <tr>
-                <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300 w-36">Period</th>
-                {showWorkloadCol && (
-                  <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300 w-48">
-                    Recommended (Workload)
-                  </th>
-                )}
-                {showGroupCol && (
-                  <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300 w-52">
-                    By Group (1–4 Match)
-                  </th>
-                )}
-                <th className="py-3 px-3.5 font-bold text-stone-700 dark:text-stone-300">
-                  Free Staff (Available)
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100 dark:divide-stone-800/60">
-              {substitutionRows.map(r => (
-                <tr key={r.period} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30">
-                  <td className="py-3 px-3.5 font-bold">
-                    <div className="text-stone-900 dark:text-stone-100">Period {r.period}</div>
-                    {r.info && (
-                      <div className="text-[11px] text-stone-500 font-semibold mt-0.5">
-                        {r.info}
-                      </div>
-                    )}
-                  </td>
-                  {showWorkloadCol && (
-                    <td className="py-3 px-3.5">
-                      {r.isFree ? (
-                        <span className="text-stone-400 italic">Absent teacher free</span>
-                      ) : (
-                        <div className="font-bold text-emerald-800 dark:text-emerald-400">
-                          {r.bestWorkload}
-                        </div>
-                      )}
-                    </td>
-                  )}
-                  {showGroupCol && (
-                    <td className="py-3 px-3.5">
-                      {r.isFree ? (
-                        <span className="text-stone-400">—</span>
-                      ) : (
-                        <div className="space-y-1">
-                          {r.groupMatches.map((m, mi) => (
-                            <div key={m.teacher} className="text-[11px] leading-tight">
-                              <span className="font-bold text-stone-900 dark:text-stone-100">
-                                {mi + 1}. {m.teacher}
-                              </span>
-                              <span className="text-stone-400 ml-1">
-                                ({[m.info.rank, m.info.qual].filter(Boolean).join(" ") || "No group"})
-                              </span>
-                            </div>
-                          ))}
-                          {r.groupMatches.length === 0 && <span className="text-stone-400">—</span>}
-                        </div>
-                      )}
-                    </td>
-                  )}
-                  <td className="py-3 px-3.5">
-                    {r.isFree ? (
-                      <span className="text-stone-400">—</span>
-                    ) : (
-                      <div className="text-[11px] text-stone-600 dark:text-stone-400 leading-normal">
-                        {r.freeTeachers.join(", ") || "No teachers available"}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {renderPickSheet()}
+      {renderAddSheet()}
     </div>
   );
 };
+
+/* ============================== small components ============================== */
+const Tag: React.FC<{ warn?: boolean; children: React.ReactNode }> = ({ warn, children }) => (
+  <span
+    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full whitespace-nowrap ${
+      warn
+        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
+        : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+    }`}
+  >
+    {children}
+  </span>
+);
+
+const RuleCheck: React.FC<{ checked: boolean; label: string; onChange: (v: boolean) => void }> = ({ checked, label, onChange }) => (
+  <label className="flex items-center gap-2 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer">
+    <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="rounded text-emerald-800 focus:ring-emerald-700" />
+    <span>{label}</span>
+  </label>
+);
+
+const Sheet: React.FC<{
+  title: string;
+  subtitle?: string;
+  closeLabel?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}> = ({ title, subtitle, closeLabel, onClose, children }) => (
+  <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60 backdrop-blur-xs" onClick={onClose}>
+    <div
+      role="dialog"
+      aria-label={title}
+      className="w-full sm:max-w-md max-h-[85vh] sm:max-h-[80vh] flex flex-col bg-stone-50 dark:bg-stone-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="sm:hidden pt-3 pb-1 flex justify-center">
+        <div className="w-12 h-1.5 bg-stone-300 dark:bg-stone-700 rounded-full" />
+      </div>
+      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-stone-200 dark:border-stone-800">
+        <div className="min-w-0">
+          <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 truncate">{title}</h3>
+          {subtitle && <div className="text-[11px] text-stone-500 truncate">{subtitle}</div>}
+        </div>
+        <button type="button" onClick={onClose} className="px-2 py-1 -mr-2 text-sm font-bold text-emerald-800 dark:text-emerald-400 rounded-lg" aria-label="Close">
+          {closeLabel || 'Close'}
+        </button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const SearchBox: React.FC<{ value: string; onChange: (v: string) => void; placeholder: string }> = ({ value, onChange, placeholder }) => (
+  <div className="px-4 py-2.5 border-b border-stone-200 dark:border-stone-800">
+    <div className="relative flex items-center">
+      <Search className="w-4 h-4 absolute left-3.5 text-stone-400 pointer-events-none" />
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 focus:outline-hidden focus:ring-2 focus:ring-emerald-600"
+      />
+    </div>
+  </div>
+);
