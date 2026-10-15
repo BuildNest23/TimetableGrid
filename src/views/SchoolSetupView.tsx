@@ -202,7 +202,7 @@ interface ScheduleEditorProps {
   assembly: { start: string; end: string };
   chain: boolean;
   onBreakAfterChange: (n: number) => void;
-  onTimesChange: (t: PeriodTime[]) => void;
+  onTimesChange: (t: PeriodTime[], assembly?: { start: string; end: string }) => void;
   onAssemblyChange: (a: { start: string; end: string }) => void;
   onChainChange: (on: boolean) => void;
 }
@@ -223,13 +223,14 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = (p) => {
     }
   }, [sig]);
 
-  const commit = (next: TimeModel) => {
+  const commit = (next: TimeModel, assembly?: { start: string; end: string }) => {
     setModel(next);
     if (next.start == null) return;
     const rows = calcModel(next, ba, n);
     const times: PeriodTime[] = rows.map(r => ({ start: minToStr(r.st), end: minToStr(r.en) }));
     lastSig.current = JSON.stringify(times);
-    p.onTimesChange(times);
+    // times + assembly go out in ONE update, otherwise the second update overwrites the first
+    p.onTimesChange(times, assembly);
   };
 
   // Break position / period count changed → re-flow times (skip the first render)
@@ -297,8 +298,9 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = (p) => {
   const setAssemblyEnd = (v: string) => {
     const m = inputToMin(v);
     if (m == null) return;
-    p.onAssemblyChange({ start: p.assembly.start, end: minToStr(m) });
-    if (p.chain) setFirst(m);
+    const nextAsm = { start: p.assembly.start, end: minToStr(m) };
+    if (p.chain) commit({ ...model, start: m }, nextAsm);
+    else p.onAssemblyChange(nextAsm);
   };
 
   const labelCls = 'block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1';
@@ -1250,7 +1252,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
                 setBreakAfter(n);
                 updateData(prev => ({ ...prev, breakAfter: n }), true);
               }}
-              onTimesChange={(t) => updateData(prev => ({ ...prev, periodTimes: t }), true)}
+              onTimesChange={(t, a) => updateData(prev => ({ ...prev, periodTimes: t, ...(a ? { assemblyTime: a } : {}) }), true)}
               onAssemblyChange={(a) => updateData(prev => ({ ...prev, assemblyTime: a }), true)}
               onChainChange={toggleAutoChain}
             />
@@ -1352,7 +1354,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
                 setFridayBreakAfter(n);
                 updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, breakAfter: n } }), true);
               }}
-              onTimesChange={(t) => updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: t } }), true)}
+              onTimesChange={(t, a) => updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: t, ...(a ? { assemblyTime: a } : {}) } }), true)}
               onAssemblyChange={(a) => updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, assemblyTime: a } }), true)}
               onChainChange={toggleAutoChain}
             />
