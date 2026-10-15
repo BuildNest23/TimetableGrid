@@ -573,14 +573,6 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
             </table>
           </div>
         )}
-        <div className="flex gap-2 mt-4">
-          <button type="button" onClick={handlePrint} className="flex-1 px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
-            <Printer className="w-3.5 h-3.5" /> Print
-          </button>
-          <button type="button" onClick={handleExportImage} disabled={isExporting} className={`${BTN_SOFT} flex-1 justify-center`}>
-            <Share2 className="w-3.5 h-3.5" /> {isExporting ? '…' : 'Share'}
-          </button>
-        </div>
       </div>
     );
   };
