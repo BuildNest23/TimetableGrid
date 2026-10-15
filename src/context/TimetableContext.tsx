@@ -4,6 +4,7 @@ import {
   EMPTY_TIMETABLE_DATA,
   Slot2,
   LongLeave,
+  SubstituteBoard,
   DAY_NAMES
 } from '../types/timetable';
 
@@ -100,6 +101,26 @@ function normalize(raw: Partial<TimetableData>): TimetableData {
 
     return [name, incharge, sec, subs.slice(0, base.periods.length), teachers.slice(0, base.periods.length), slot2Arr];
   });
+
+  // Saved substitute boards: keep only well-formed entries
+  const boards: Record<string, SubstituteBoard> = {};
+  const rawBoards = (base.substituteBoards && typeof base.substituteBoards === 'object') ? base.substituteBoards : {};
+  Object.keys(rawBoards).forEach(d => {
+    const b = rawBoards[d];
+    if (!b || typeof b !== 'object') return;
+    const absent = Array.isArray(b.absent) ? b.absent.filter(t => typeof t === 'string') : [];
+    const assigned: Record<string, Record<string, string>> = {};
+    Object.keys(b.assigned || {}).forEach(a => {
+      const per: Record<string, string> = {};
+      Object.entries(b.assigned[a] || {}).forEach(([pi, t]) => {
+        const idx = Number(pi);
+        if (typeof t === 'string' && t && Number.isInteger(idx) && idx >= 0 && idx < base.periods.length) per[pi] = t;
+      });
+      if (Object.keys(per).length) assigned[a] = per;
+    });
+    if (absent.length || Object.keys(assigned).length) boards[d] = { absent, assigned };
+  });
+  base.substituteBoards = boards;
 
   return base;
 }
@@ -557,6 +578,18 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return ex.teacher === oldName ? { ...ex, teacher: newName } : ex;
       });
 
+      const nextBoards: Record<string, SubstituteBoard> = {};
+      Object.keys(prev.substituteBoards || {}).forEach(d => {
+        const b = prev.substituteBoards[d];
+        const assigned: Record<string, Record<string, string>> = {};
+        Object.keys(b.assigned || {}).forEach(a => {
+          const per: Record<string, string> = {};
+          Object.entries(b.assigned[a]).forEach(([pi, t]) => { per[pi] = t === oldName ? newName : t; });
+          assigned[a === oldName ? newName : a] = per;
+        });
+        nextBoards[d] = { absent: b.absent.map(t => t === oldName ? newName : t), assigned };
+      });
+
       const nextInfo = { ...prev.teacherInfo };
       if (nextInfo[oldName]) {
         nextInfo[newName] = nextInfo[oldName];
@@ -571,6 +604,7 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         classes: nextClasses,
         teacherLeaves: nextLeaves,
         longLeaves: nextLongLeaves,
+        substituteBoards: nextBoards,
         conflictExceptions: nextExceptions,
         teacherInfo: nextInfo
       };
