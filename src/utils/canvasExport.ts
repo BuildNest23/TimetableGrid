@@ -62,6 +62,7 @@ function drawLeft(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
  */
 async function renderHtmlToCanvas(html: string, widthPx: number): Promise<HTMLCanvasElement> {
   const host = document.createElement('div');
+  host.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
   host.style.cssText = `position:fixed;left:-100000px;top:0;width:${widthPx}px;background:#fff;`;
   host.innerHTML = html;
   document.body.appendChild(host);
@@ -345,10 +346,13 @@ export async function createTimetableCanvas(
             return !data.classes.some(c => {
               const t1 = c[4][pi];
               const s2 = c[5] ? c[5][pi] : null;
+              if (s2 && s2.mode === 'same') {
+                return (t1 || s2.teacher) === t;
+              }
               let s1Active = true;
               if (s2 && s2.mode === 'rotation' && s2.days.includes(todayIdx)) s1Active = false;
               if (t1 === t && s1Active) return true;
-              if (s2 && s2.teacher === t && s2.mode !== 'same') {
+              if (s2 && s2.teacher === t) {
                 return s2.mode === 'parallel' || s2.days.includes(todayIdx);
               }
               return false;
@@ -429,12 +433,18 @@ export async function createTimetableCanvas(
           data.classes.forEach(c => {
             const t1 = c[4][pi];
             const s2 = c[5] ? c[5][pi] : null;
-            let s1Active = true;
-            if (s2 && s2.mode === 'rotation' && s2.days.includes(dayIdx)) s1Active = false;
-            if (t1 === absent && s1Active) assignments.push(`${c[3][pi] || "—"} (${c[0]})`);
-            else if (s2 && s2.teacher === absent && s2.mode !== 'same') {
-              const active = s2.mode === 'parallel' || s2.days.includes(dayIdx);
-              if (active) assignments.push(`${s2.subject || "—"} (${c[0]})`);
+            if (s2 && s2.mode === 'same') {
+              if ((t1 || s2.teacher) === absent) {
+                assignments.push(`${c[3][pi] || s2.subject || "—"} (${c[0]})`);
+              }
+            } else {
+              let s1Active = true;
+              if (s2 && s2.mode === 'rotation' && s2.days.includes(dayIdx)) s1Active = false;
+              if (t1 === absent && s1Active) assignments.push(`${c[3][pi] || "—"} (${c[0]})`);
+              else if (s2 && s2.teacher === absent) {
+                const active = s2.mode === 'parallel' || s2.days.includes(dayIdx);
+                if (active) assignments.push(`${s2.subject || "—"} (${c[0]})`);
+              }
             }
           });
         }

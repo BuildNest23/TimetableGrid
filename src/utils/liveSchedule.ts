@@ -381,7 +381,17 @@ export function getClassAllocationsForPeriod(
           if (slot2.subject) subject = slot2.subject;
           if (slot2.teacher) teacher = slot2.teacher;
         }
-      } else if (slot2.mode === 'parallel' || slot2.mode === 'same') {
+      } else if (slot2.mode === 'same') {
+        if (!teacher && slot2.teacher) teacher = slot2.teacher;
+        const appliesToday = Array.isArray(slot2.days) && slot2.days.includes(dayIndex);
+        if (slot2.days?.length) {
+          if (appliesToday && slot2.subject) {
+            subject = slot2.subject;
+          }
+        } else if (slot2.subject && slot2.subject !== subject) {
+          slot2Subject = slot2.subject;
+        }
+      } else if (slot2.mode === 'parallel') {
         slot2Subject = slot2.subject;
         slot2Teacher = slot2.teacher;
       }

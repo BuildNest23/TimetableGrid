@@ -566,10 +566,10 @@ export async function exportTimetableToExcel(
 
       data.periods.forEach((p, i) => {
         const pt = (ft.periodTimes && ft.periodTimes[i]) || { start: "", end: "" };
-        if (!pt.start && !pt.end) return;
+        const timeSlot = (pt.start || pt.end) ? `${pt.start || "—"} - ${pt.end || "—"}` : "—";
         ftRows.push([
           { v: String(p), style: 5 },
-          { v: `${pt.start || "—"} - ${pt.end || "—"}`, style: 5 },
+          { v: timeSlot, style: 5 },
           { v: calculateDuration(pt.start, pt.end), style: 5 }
         ]);
 

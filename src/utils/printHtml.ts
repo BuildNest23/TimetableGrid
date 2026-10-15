@@ -1,4 +1,4 @@
-import { DAY_NAMES, ClassItem } from '../types/timetable';
+import { DAY_NAMES, ClassItem, Slot2 } from '../types/timetable';
 
 /* ---------- HTML escape ---------- */
 export function esc(s: unknown): string {
@@ -11,14 +11,14 @@ export function esc(s: unknown): string {
 }
 
 /* ---------- Slot helpers (single source of truth) ---------- */
-export function isSlot2ActiveOn(s: any, d: number): boolean {
+export function isSlot2ActiveOn(s: Slot2 | null | undefined, d: number): boolean {
   if (!s) return false;
   if (s.mode === 'parallel') return true;
   if (s.mode === 'same') return !s.days?.length || s.days.includes(d);
   return !!s.days?.includes(d);
 }
 
-export function isSlot1ActiveOn(s: any, d: number): boolean {
+export function isSlot1ActiveOn(s: Slot2 | null | undefined, d: number): boolean {
   if (!s) return true;
   if (s.mode === 'parallel') return true;
   if (s.mode === 'same') return !s.days?.length || !s.days.includes(d);

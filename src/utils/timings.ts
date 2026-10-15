@@ -72,7 +72,7 @@ export function getPeriodTimes(data: TimetableData): TimingsData {
   };
 
   // Assembly time
-  const assemblyTime = (ft && ft.enabled && ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end))
+  const assemblyTime = (ft && (ft.enabled || fridayEnabled) && ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end))
     ? `${ft.assemblyTime.start || '—'} - ${ft.assemblyTime.end || '—'}`
     : '';
 

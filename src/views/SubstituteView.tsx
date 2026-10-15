@@ -227,9 +227,7 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
     if (!absent.length) return;
     const before = absent.reduce((n, a) => n + doneCount(a), 0);
     const total = absent.reduce((n, a) => n + needCount(a), 0);
-    const { absentList: _a, ...rest } = baseArgs;
-    void _a;
-    const next = autoFillAssignments({ ...rest, absentList: absent }, assigned);
+    const next = autoFillAssignments({ ...baseArgs, absentList: absent }, assigned);
     writeBoard(b => ({ ...b, assigned: next }));
     const after = absent.reduce(
       (n, a) => n + periodsNeedingCover(data, a, dayIdx).filter(pi => next[a]?.[String(pi)]).length,

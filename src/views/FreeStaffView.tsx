@@ -46,6 +46,9 @@ export const FreeStaffView: React.FC = () => {
         return !data.classes.some(c => {
           const t1 = c[4][pi];
           const s2 = c[5] ? c[5][pi] : null;
+          if (s2 && s2.mode === 'same') {
+            return (t1 || s2.teacher) === t;
+          }
           let s1Active = true;
           if (s2 && s2.mode === 'rotation' && s2.days.includes(dayIdx)) s1Active = false;
           if (t1 === t && s1Active) return true;
