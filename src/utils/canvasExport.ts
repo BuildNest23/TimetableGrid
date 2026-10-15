@@ -56,6 +56,47 @@ function drawLeft(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
 }
 
 
+/**
+ * Rasterises an HTML string (inline styles only) into a canvas using an SVG
+ * foreignObject. No external resources are loaded, so the canvas stays clean.
+ */
+async function renderHtmlToCanvas(html: string, widthPx: number): Promise<HTMLCanvasElement> {
+  const host = document.createElement('div');
+  host.style.cssText = `position:fixed;left:-100000px;top:0;width:${widthPx}px;background:#fff;`;
+  host.innerHTML = html;
+  document.body.appendChild(host);
+  try {
+    const heightPx = Math.ceil(host.scrollHeight);
+    // Drop the off-screen positioning before serialising, or the picture is drawn outside the SVG
+    host.style.cssText = `width:${widthPx}px;background:#fff;`;
+    const xhtml = new XMLSerializer().serializeToString(host);
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}">` +
+      `<foreignObject x="0" y="0" width="100%" height="100%">${xhtml}</foreignObject></svg>`;
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('SVG image failed to load'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = widthPx * scale;
+    canvas.height = heightPx * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No canvas context');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0, widthPx, heightPx);
+    // Throws if the canvas was tainted, which triggers the classic fallback
+    canvas.toDataURL('image/png');
+    return canvas;
+  } finally {
+    document.body.removeChild(host);
+  }
+}
+
 export async function createTimetableCanvas(
   kind: 'class' | 'teacher' | 'roster' | 'freestaff' | 'substitute',
   data: TimetableData,
@@ -66,8 +107,17 @@ export async function createTimetableCanvas(
     teacherPeriodSummary: (teacher: string, periodIndex: number) => string;
     teacherTotalPeriods: (teacher: string) => number;
     getLeavesForDate: (date: string) => string[];
+    /** Pre-built black-and-white document HTML (see printDocs.ts). Used for roster, free staff and substitute. */
+    docHtml?: string;
   }
 ): Promise<HTMLCanvasElement> {
+  if (options.docHtml && (kind === 'roster' || kind === 'freestaff' || kind === 'substitute')) {
+    try {
+      return await renderHtmlToCanvas(options.docHtml, 1080);
+    } catch (err) {
+      console.warn('Document PNG render failed, using the classic drawing instead', err);
+    }
+  }
   const scale = 2;
   const F = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
   const hasBreak = data.breakAfter && data.breakAfter > 0 && data.breakAfter < data.periods.length;
