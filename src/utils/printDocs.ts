@@ -74,6 +74,9 @@ function docStyles(variant: DocVariant, fixedHeight: boolean): string {
 .doc .sb{font-weight:700;font-size:1.1em;line-height:1.2}
 .doc .sb small{display:block;font-weight:500;font-size:0.78em;color:#444}
 .doc .rec{margin-left:auto;border:0.14em solid #000;border-radius:2em;padding:0.18em 0.85em;font-weight:700;font-size:0.88em;background:#fff;text-align:right}
+.doc .rec.sel{background:#000;color:#fff}
+.doc .rec.open{border-style:dashed;font-weight:600;color:#444}
+.doc .gap{height:0.6em}
 .doc .row{display:flex;gap:0.6em;padding:0.55em 0.9em;font-size:0.88em;align-items:flex-start}
 .doc .row+.row{border-top:0.05em dashed #bdbdbd}
 .doc .row .k{flex:none;width:5.6em;color:#444;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;font-size:0.78em;padding-top:0.25em}
@@ -187,18 +190,24 @@ export interface SubstituteDocRow {
   period: number;
   info: string; // "Subject (Class), Subject (Class)"
   isFree: boolean;
+  /** Teacher chosen to cover this period ("" when not assigned yet) */
+  assigned: string;
   bestName: string;
   bestLoad: string;
   groupMatches: { teacher: string; rank: string; qual: string }[];
   freeList: { teacher: string; load: string }[];
 }
 
+export interface SubstituteDocAbsent {
+  name: string;
+  rows: SubstituteDocRow[];
+}
+
 export interface SubstituteDocInput {
-  absentTeacher: string;
   dateLabel: string; // e.g. 2026-10-15
   dayName: string; // e.g. Thursday
   otherLeaves: string[];
-  rows: SubstituteDocRow[];
+  absent: SubstituteDocAbsent[];
   showWorkload: boolean;
   showGroup: boolean;
 }
@@ -213,38 +222,58 @@ export function buildSubstituteDoc(
   input: SubstituteDocInput,
   variant: DocVariant = 'print'
 ): string {
-  const info = data.teacherInfo[input.absentTeacher] || { qual: '', rank: '', desig: '' };
-  const absentSub = [info.qual, info.rank].filter(Boolean).join(', ');
-  const cover = input.rows.filter(r => !r.isFree);
-  const freePeriods = input.rows.filter(r => r.isFree).map(r => r.period);
+  const sections = input.absent.map(a => {
+    const info = data.teacherInfo[a.name] || { qual: '', rank: '', desig: '' };
+    const absentSub = [info.qual, info.rank].filter(Boolean).join(', ');
+    const cover = a.rows.filter(r => !r.isFree);
+    const done = cover.filter(r => r.assigned).length;
+    const freePeriods = a.rows.filter(r => r.isFree).map(r => r.period);
 
-  const blocks = cover.map(r => {
-    const parts = r.info.split(', ').filter(Boolean).map(splitAssignment);
-    const title = parts.map(p => esc(p.subject)).join(' / ');
-    const sub = parts.map(p => p.cls).filter(Boolean).join(', ');
-    const rec =
-      input.showWorkload && r.bestName
-        ? `<div class="rec">Recommended: ${esc(r.bestName)} · ${esc(r.bestLoad)}</div>`
-        : '';
-    const group =
-      input.showGroup && r.groupMatches.length
-        ? `<div class="row"><div class="k">By group</div><div class="grp">${r.groupMatches
-            .map((g, i) => `<span><b>${i + 1}</b> ${esc(g.teacher)} <span class="g2">(${esc([g.rank, g.qual].filter(Boolean).join(' ') || 'No group')})</span></span>`)
-            .join('')}</div></div>`
-        : '';
-    const free = r.freeList.length
-      ? `<div class="chs">${r.freeList.map(f => `<span class="c">${esc(f.teacher)}<i>${esc(f.load)}</i></span>`).join('')}</div>`
-      : `<span class="busy">No free teacher</span>`;
-    return `<div class="blk"><div class="main">
-      <div class="head"><div class="pn">${r.period}</div><div class="sb">${title || 'Period ' + r.period}${sub ? `<small>${esc(sub)}</small>` : ''}</div>${rec}</div>
-      ${group}
-      <div class="row"><div class="k">Also free</div>${free}</div>
-    </div>${variant === 'print' ? '<div class="sg">Substitute signs</div>' : ''}</div>`;
-  }).join('');
+    const blocks = cover.map(r => {
+      const parts = r.info.split(', ').filter(Boolean).map(splitAssignment);
+      const title = parts.map(p => esc(p.subject)).join(' / ');
+      const sub = parts.map(p => p.cls).filter(Boolean).join(', ');
+      let badge: string;
+      if (r.assigned) {
+        badge = `<div class="rec sel">${esc(r.assigned)}</div>`;
+      } else if (input.showWorkload && r.bestName) {
+        badge = `<div class="rec">Suggested: ${esc(r.bestName)} · ${esc(r.bestLoad)}</div>`;
+      } else {
+        badge = `<div class="rec open">Not assigned</div>`;
+      }
+      // Hand-assign help is only needed while nobody is chosen yet
+      const group =
+        !r.assigned && input.showGroup && r.groupMatches.length
+          ? `<div class="row"><div class="k">By group</div><div class="grp">${r.groupMatches
+              .map((g, i) => `<span><b>${i + 1}</b> ${esc(g.teacher)} <span class="g2">(${esc([g.rank, g.qual].filter(Boolean).join(' ') || 'No group')})</span></span>`)
+              .join('')}</div></div>`
+          : '';
+      const free = r.assigned
+        ? ''
+        : `<div class="row"><div class="k">Also free</div>${
+            r.freeList.length
+              ? `<div class="chs">${r.freeList.map(f => `<span class="c">${esc(f.teacher)}<i>${esc(f.load)}</i></span>`).join('')}</div>`
+              : `<span class="busy">No free teacher</span>`
+          }</div>`;
+      return `<div class="blk"><div class="main">
+        <div class="head"><div class="pn">${r.period}</div><div class="sb">${title || 'Period ' + r.period}${sub ? `<small>${esc(sub)}</small>` : ''}</div>${badge}</div>
+        ${group}
+        ${free}
+      </div>${variant === 'print' ? '<div class="sg">Substitute signs</div>' : ''}</div>`;
+    }).join('');
 
-  const freeLine = freePeriods.length
-    ? `<div class="freeline"><b>${freePeriods.length === 1 ? 'Period ' + freePeriods[0] : 'Periods ' + rangeLabel(freePeriods)}</b> · Absent teacher is free · no cover needed</div>`
-    : '';
+    const freeLine = freePeriods.length
+      ? `<div class="freeline"><b>${freePeriods.length === 1 ? 'Period ' + freePeriods[0] : 'Periods ' + rangeLabel(freePeriods)}</b> · Absent teacher is free · no cover needed</div>`
+      : '';
+
+    return `<div class="info">
+        <div><small>Absent teacher</small><b>${esc(a.name)}</b>${absentSub ? ` <em>· ${esc(absentSub)}</em>` : ''}</div>
+        <div><small>Date</small><b>${esc(input.dayName || '—')}</b> <em>${esc(input.dateLabel)}</em></div>
+        <div><small>Covered</small><b>${done}</b> <em>of ${cover.length}</em></div>
+      </div>
+      ${blocks || '<div class="freeline">No periods need cover for this date.</div>'}
+      ${freeLine}`;
+  }).join('<div class="gap"></div>');
 
   const leave = input.otherLeaves.length
     ? `<div class="leave">Also on leave: ${esc(input.otherLeaves.join(', '))}</div>`
@@ -252,14 +281,8 @@ export function buildSubstituteDoc(
 
   const inner = `${buildLetterheadHtml(data, 'Substitute Teacher Sheet', [input.dayName ? `${input.dayName}, ${input.dateLabel}` : input.dateLabel])}
   <div class="body">
-    <div class="info">
-      <div><small>Absent teacher</small><b>${esc(input.absentTeacher)}</b>${absentSub ? ` <em>· ${esc(absentSub)}</em>` : ''}</div>
-      <div><small>Date</small><b>${esc(input.dayName || '—')}</b> <em>${esc(input.dateLabel)}</em></div>
-      <div><small>Periods to cover</small><b>${cover.length}</b> <em>of ${input.rows.length}</em></div>
-    </div>
     ${leave}
-    ${blocks || '<div class="freeline">No periods need cover for this date.</div>'}
-    ${freeLine}
+    ${sections || '<div class="freeline">No absent teacher selected.</div>'}
     ${variant === 'print' ? '<div class="sigs"><div>Arranged by</div><div>Principal</div></div>' : ''}
   </div>
   ${variant === 'print' ? buildFooterHtml(todayLabel(), '') : ''}`;
