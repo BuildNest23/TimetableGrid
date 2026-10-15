@@ -56,6 +56,8 @@ export type PeriodsDisplay = 'day' | 'week' | 'both';
 export interface TimetableData {
   schoolName: string;
   academicYear: string;
+  /** false = leave the academic year/session out of printed and exported sheets (default: included) */
+  printAcademicYear?: boolean;
   printNote: string;
   wholeTitle: string;
   allTeachersTitle: string;
@@ -169,3 +171,8 @@ export const EMPTY_TIMETABLE_DATA: TimetableData = {
   schoolLogo: "",
   signatureEnabled: false
 };
+
+/** Academic year text for print/export headers — empty when the user excluded it. */
+export function printYear(data: { academicYear: string; printAcademicYear?: boolean }): string {
+  return data.printAcademicYear === false ? '' : (data.academicYear || '');
+}
