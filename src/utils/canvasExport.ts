@@ -1,5 +1,5 @@
 import { formatPeriodsDW, periodsHeading } from './periodsDW';
-import { TimetableData } from '../types/timetable';
+import { TimetableData, printYear } from '../types/timetable';
 
 declare global {
   interface Window {
@@ -177,7 +177,7 @@ export async function createTimetableCanvas(
     ctx.textAlign = "center";
 
     const inchargePart = c[1] ? " — Incharge: " + c[1] : "";
-    const subtitle = [data.academicYear, c[0] + inchargePart].filter(Boolean).join(" • ");
+    const subtitle = [printYear(data), c[0] + inchargePart].filter(Boolean).join(" • ");
     drawPageHeader(ctx, totalW, pad, headerH, subtitle);
 
     let y = pad + headerH;
@@ -532,7 +532,7 @@ export async function createTimetableCanvas(
   const inchargeClass = data.classes.find(c => c[1] === t);
   const info = (data.teacherInfo && data.teacherInfo[t]) || { qual: "", rank: "", desig: "" };
   const subParts = [
-    data.academicYear,
+    printYear(data),
     inchargeClass ? "Incharge of " + inchargeClass[0] : "",
     info.rank,
     info.qual,

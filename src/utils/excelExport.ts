@@ -1,5 +1,5 @@
 import { formatPeriodsDW, periodsHeading } from './periodsDW';
-import { TimetableData, DAY_NAMES } from '../types/timetable';
+import { TimetableData, DAY_NAMES, printYear } from '../types/timetable';
 
 declare global {
   interface Window {
@@ -347,7 +347,7 @@ export async function exportTimetableToExcel(
     if (data.classes.length) {
       const n = data.periods.length;
       const numCols = 2 + n;
-      const rows = buildHeaderRows(numCols, data.schoolName, [data.academicYear, data.wholeTitle].filter(Boolean).join(" • "));
+      const rows = buildHeaderRows(numCols, data.schoolName, [printYear(data), data.wholeTitle].filter(Boolean).join(" • "));
       const hdr = [{ v: "Class", style: 4 }, { v: "Incharge", style: 4 }];
       data.periods.forEach(p => hdr.push({ v: "Period " + p, style: 4 }));
       rows.push(hdr);
@@ -397,7 +397,7 @@ export async function exportTimetableToExcel(
     if (data.classes.length && data.teachers.length) {
       const n = data.periods.length;
       const numCols = 1 + n;
-      const rows = buildHeaderRows(numCols, data.schoolName, [data.academicYear, data.allTeachersTitle].filter(Boolean).join(" • "));
+      const rows = buildHeaderRows(numCols, data.schoolName, [printYear(data), data.allTeachersTitle].filter(Boolean).join(" • "));
       const hdr = [{ v: "Teacher", style: 4 }];
       data.periods.forEach(p => hdr.push({ v: "Period " + p, style: 4 }));
       rows.push(hdr);
@@ -421,7 +421,7 @@ export async function exportTimetableToExcel(
     data.classes.forEach(c => {
       const n = data.periods.length;
       const numCols = 1 + n;
-      const subtitle = [data.academicYear, c[0] + (c[1] ? " — Incharge: " + c[1] : "")].filter(Boolean).join(" • ");
+      const subtitle = [printYear(data), c[0] + (c[1] ? " — Incharge: " + c[1] : "")].filter(Boolean).join(" • ");
       const rows = buildHeaderRows(numCols, data.schoolName, subtitle);
       const hdr = [{ v: "Day", style: 4 }];
       data.periods.forEach(p => hdr.push({ v: "Period " + p, style: 4 }));
@@ -469,7 +469,7 @@ export async function exportTimetableToExcel(
       const teachers = data.teachers;
       const periodCount = data.periods.length;
       const numCols = COLS * 2 + (COLS - 1);
-      const rows = buildHeaderRows(numCols, data.schoolName, [data.academicYear, "All Teachers — Cut-Out Grid"].filter(Boolean).join(" • "));
+      const rows = buildHeaderRows(numCols, data.schoolName, [printYear(data), "All Teachers — Cut-Out Grid"].filter(Boolean).join(" • "));
 
       for (let blockStart = 0; blockStart < teachers.length; blockStart += PER_BLOCK) {
         const block = teachers.slice(blockStart, blockStart + PER_BLOCK);
@@ -516,7 +516,7 @@ export async function exportTimetableToExcel(
     const numColsTimings = 3;
     const timingsTitle = data.schoolTimingsTitle || "SCHOOL TIMINGS";
     const wref = data.effectiveFromDate ? "w.e.f. " + data.effectiveFromDate : "";
-    const timingsRows = buildHeaderRows(numColsTimings, data.schoolName, [data.academicYear, timingsTitle, wref].filter(Boolean).join(" • "));
+    const timingsRows = buildHeaderRows(numColsTimings, data.schoolName, [printYear(data), timingsTitle, wref].filter(Boolean).join(" • "));
     timingsRows.push([{ v: "PERIOD", style: 4 }, { v: "TIME SLOT", style: 4 }, { v: "DURATION (MINS)", style: 4 }]);
 
     if (data.assemblyTime && (data.assemblyTime.start || data.assemblyTime.end)) {
@@ -553,7 +553,7 @@ export async function exportTimetableToExcel(
     if (ft && ft.enabled && (ft.periodTimes || []).some(pt => pt.start || pt.end)) {
       const dayName = data.days[ft.dayIndex] || "Friday";
       const ftTitle = `${timingsTitle} — ${dayName}`;
-      const ftRows = buildHeaderRows(numColsTimings, data.schoolName, [data.academicYear, ftTitle, wref].filter(Boolean).join(" • "));
+      const ftRows = buildHeaderRows(numColsTimings, data.schoolName, [printYear(data), ftTitle, wref].filter(Boolean).join(" • "));
       ftRows.push([{ v: "PERIOD", style: 4 }, { v: "TIME SLOT", style: 4 }, { v: "DURATION (MINS)", style: 4 }]);
 
       if (ft.assemblyTime && (ft.assemblyTime.start || ft.assemblyTime.end)) {
@@ -602,7 +602,7 @@ export async function exportTimetableToExcel(
 
     // 6. Teachers Roster
     const numColsRoster = 6;
-    const rosterRows = buildHeaderRows(numColsRoster, data.schoolName, [data.academicYear, "Teachers Roster"].filter(Boolean).join(" • "));
+    const rosterRows = buildHeaderRows(numColsRoster, data.schoolName, [printYear(data), "Teachers Roster"].filter(Boolean).join(" • "));
     rosterRows.push([
       { v: "Teacher", style: 4 },
       { v: "Group", style: 4 },
@@ -631,7 +631,7 @@ export async function exportTimetableToExcel(
       const todayIdx = getDayIdxFromDate(today);
       const onLeaveSet = new Set(getLeavesForDate(today));
       const numCols = 2;
-      const rows = buildHeaderRows(numCols, data.schoolName, [data.academicYear, "Free Staff — by Period", today].filter(Boolean).join(" • "));
+      const rows = buildHeaderRows(numCols, data.schoolName, [printYear(data), "Free Staff — by Period", today].filter(Boolean).join(" • "));
       rows.push([{ v: "Period", style: 4 }, { v: "Free teachers", style: 4 }]);
 
       data.periods.forEach((p, pi) => {
@@ -662,7 +662,7 @@ export async function exportTimetableToExcel(
 
       const numCols = 4;
       const subParts = [
-        data.academicYear,
+        printYear(data),
         "Substitute Board — Absent: " + absentTeacher,
         "Date: " + leaveDate
       ].filter(Boolean).join(" • ");

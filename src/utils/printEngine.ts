@@ -1,5 +1,5 @@
 import { formatPeriodsDW, periodsHeading } from './periodsDW';
-import { TimetableData, ClassItem } from '../types/timetable';
+import { TimetableData, ClassItem, printYear } from '../types/timetable';
 import { esc, wholeSchoolCellLines, cellTextForDay } from './printHtml';
 import { dateKey } from './dates';
 
@@ -233,7 +233,7 @@ export function buildTitleBlockHtml(
        </div>`
     : '';
 
-  const metaLine = [data.academicYear, data.printNote].filter(Boolean).join(' · ');
+  const metaLine = [printYear(data), data.printNote].filter(Boolean).join(' · ');
 
   return `
     <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:8px; padding-bottom:6px;">
@@ -611,7 +611,7 @@ function buildSectionGroups(
     const info = data.teacherInfo[currentTeacher] || { qual: '', rank: '', desig: '' };
     const inchargeClass = data.classes.find(c => c[1] === currentTeacher);
     const parts = [
-      data.academicYear,
+      printYear(data),
       inchargeClass ? `Incharge of ${inchargeClass[0]}` : '',
       info.rank,
       info.qual,
@@ -986,7 +986,7 @@ export function buildClassCardHTML(
     : '';
 
   const inchargePart = targetClass[1] ? `Incharge: ${targetClass[1]}` : '';
-  const metaLine = [inchargePart, data.academicYear].filter(Boolean).join(' · ');
+  const metaLine = [inchargePart, printYear(data)].filter(Boolean).join(' · ');
 
   const titleBlockHtml = `
     <div style="position:relative; text-align:center; ${data.schoolLogo ? 'min-height:80px; padding-left:130px; padding-right:130px;' : ''} margin-bottom:10px; padding-bottom:6px; flex-shrink:0;">
@@ -1144,7 +1144,7 @@ export function buildTeacherCardHTML(
   const info = data.teacherInfo[currentTeacher] || { qual: '', rank: '', desig: '' };
   const inchargeClass = data.classes.find(c => c[1] === currentTeacher);
   const parts = [
-    data.academicYear,
+    printYear(data),
     inchargeClass ? `Incharge of ${inchargeClass[0]}` : '',
     info.rank,
     info.qual,
@@ -1310,7 +1310,7 @@ export function buildPeriodCardHTML(
 
   const timingNoteParts = [
     timeLine,
-    data.academicYear
+    printYear(data)
   ].filter(Boolean);
 
   const titleBlockHtml = `

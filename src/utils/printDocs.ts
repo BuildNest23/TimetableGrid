@@ -1,4 +1,4 @@
-import { TimetableData } from '../types/timetable';
+import { TimetableData, printYear } from '../types/timetable';
 import { esc } from './printHtml';
 import { formatPeriodsDW, periodsHeading } from './periodsDW';
 
@@ -114,7 +114,7 @@ export function buildLetterheadHtml(
   const logo = data.schoolLogo
     ? `<img class="logo" src="${esc(data.schoolLogo)}" alt=""/>`
     : `<div class="mono">${esc(monogram(data.schoolName))}</div>`;
-  const meta = [data.academicYear, data.printNote].filter(Boolean).join(' · ');
+  const meta = [printYear(data), data.printNote].filter(Boolean).join(' · ');
   return `<div class="lh">${logo}<div class="ttl"><div class="school">${esc(data.schoolName || 'School')}</div><div class="dt">${esc(title)}</div>${meta ? `<div class="meta">${esc(meta)}</div>` : ''}</div><div class="chips">${chips.filter(Boolean).map(c => `<span class="chip">${esc(c)}</span>`).join('')}</div></div>`;
 }
 
