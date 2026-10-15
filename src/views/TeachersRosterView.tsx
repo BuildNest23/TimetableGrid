@@ -4,6 +4,7 @@ import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExp
 import { triggerPrint } from '../utils/printUtils';
 import { Users, Printer, Download, Share2 } from 'lucide-react';
 import { formatPeriodsDW, periodsHeading } from '../utils/periodsDW';
+import { buildRosterDoc } from '../utils/printDocs';
 
 export const TeachersRosterView: React.FC = () => {
   const {
@@ -14,56 +15,16 @@ export const TeachersRosterView: React.FC = () => {
   } = useTimetable();
 
   const handlePrint = () => {
-    const rowsHtml = data.teachers.map(t => {
-      const info = data.teacherInfo[t] || { qual: "", rank: "", desig: "" };
-      const incharge = data.classes.filter(c => c[1] === t).map(c => c[0]).join(", ");
-      return `
-        <tr>
-          <td style="padding: 7px; border: 1px solid #000; font-weight: bold; text-align: center;">${t}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.qual || "—"}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.rank || "—"}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: center;">${info.desig || "—"}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: center;">${incharge || "—"}</td>
-          <td style="padding: 7px; border: 1px solid #000; text-align: center; font-weight: bold;">${formatPeriodsDW(getTeacherTotalPeriods(t), data.daysPerWeek, data.periodsDisplay)}</td>
-        </tr>
-      `;
-    }).join("");
-
-    const content = `
-      <div class="print-sheet" style="font-family: sans-serif; padding: 10mm;">
-        <div style="text-align: center; margin-bottom: 6mm;">
-          <h2 style="margin: 0; font-size: 18pt;">${data.schoolName}</h2>
-          <div style="font-size: 13pt; font-weight: bold; margin-top: 2mm;">Teachers Roster</div>
-          <div style="font-size: 10pt; color: #555; margin-top: 1mm;">
-            ${[data.academicYear, data.printNote].filter(Boolean).join(" · ")}
-          </div>
-        </div>
-        <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
-          <thead>
-            <tr style="background: #e5e7eb;">
-              <th style="width: 24%; padding: 7px; border: 1px solid #000; text-align: center;">Teacher</th>
-              <th style="width: 14%; padding: 7px; border: 1px solid #000;">Group</th>
-              <th style="width: 12%; padding: 7px; border: 1px solid #000;">Grade</th>
-              <th style="width: 16%; padding: 7px; border: 1px solid #000;">Designation</th>
-              <th style="width: 20%; padding: 7px; border: 1px solid #000; text-align: center;">Incharge Of</th>
-              <th style="width: 14%; padding: 7px; border: 1px solid #000;">${periodsHeading(data.periodsDisplay)}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    triggerPrint(content, { orientation: 'landscape', printSize: 'm' });
+    const content = buildRosterDoc(data, getTeacherTotalPeriods, 'print');
+    triggerPrint(content, { orientation: 'portrait', printSize: 'm' });
   };
 
   const handleExportImage = async (_share = false) => {
     const canvas = await createTimetableCanvas('roster', data, {
       teacherPeriodSummary,
       teacherTotalPeriods: getTeacherTotalPeriods,
-      getLeavesForDate
+      getLeavesForDate,
+      docHtml: buildRosterDoc(data, getTeacherTotalPeriods, 'png')
     });
     const stamp = new Date().toISOString().slice(0, 10);
     const fileName = `TimetableGrid-Roster-${stamp}.png`;

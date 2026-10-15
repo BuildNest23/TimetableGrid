@@ -1,4 +1,5 @@
 import { formatPeriodsDW } from '../utils/periodsDW';
+import { buildSubstituteDoc } from '../utils/printDocs';
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTimetable } from '../context/TimetableContext';
 import { DAY_NAMES } from '../types/timetable';
@@ -192,8 +193,11 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
           info: "",
           isFree: true,
           bestWorkload: "No cover needed",
+          bestName: "",
+          bestLoad: "",
           groupMatches: [],
-          freeTeachers: []
+          freeTeachers: [],
+          freeList: []
         };
       }
 
@@ -237,8 +241,11 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
         info: assignments.join(", "),
         isFree: false,
         bestWorkload: best ? `${best.teacher} (${formatPeriodsDW(best.score, data.daysPerWeek, data.periodsDisplay)})` : "No free teacher",
+        bestName: best ? best.teacher : "",
+        bestLoad: best ? formatPeriodsDW(best.score, data.daysPerWeek, data.periodsDisplay) : "",
         groupMatches: rankedByGroup.slice(0, 4),
-        freeTeachers: rankedByWorkload.map(x => `${x.teacher} (${formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay)})`)
+        freeTeachers: rankedByWorkload.map(x => `${x.teacher} (${formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay)})`),
+        freeList: rankedByWorkload.map(x => ({ teacher: x.teacher, load: formatPeriodsDW(x.score, data.daysPerWeek, data.periodsDisplay) }))
       };
     });
   }, [
@@ -251,8 +258,38 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
     onLeaveAll,
     dayIdx,
     isDayInWeek,
-    getTeacherTotalPeriods
+    getTeacherTotalPeriods,
+    data.daysPerWeek,
+    data.periodsDisplay
   ]);
+
+  // Black-and-white sheet model shared by the print and the PNG export
+  const buildSheetHtml = (variant: 'print' | 'png') =>
+    buildSubstituteDoc(
+      data,
+      {
+        absentTeacher,
+        dateLabel: leaveDate,
+        dayName: DAY_NAMES[dayIdx] || "",
+        otherLeaves,
+        showWorkload: showWorkloadCol,
+        showGroup: showGroupCol,
+        rows: substitutionRows.map(r => ({
+          period: r.period,
+          info: r.info,
+          isFree: r.isFree,
+          bestName: r.bestName,
+          bestLoad: r.bestLoad,
+          groupMatches: r.groupMatches.map(m => ({
+            teacher: m.teacher,
+            rank: m.info.rank,
+            qual: m.info.qual
+          })),
+          freeList: r.freeList
+        }))
+      },
+      variant
+    );
 
   const handleSaveLongLeave = () => {
     if (!llTeacher || !llFrom) {
@@ -304,55 +341,7 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
   };
 
   const handlePrintSubstitute = () => {
-    const headerCells = [
-      `<th style="width: 20%; padding: 6px; border: 1px solid #000;">Period &amp; Assignment</th>`
-    ];
-    if (showWorkloadCol) headerCells.push(`<th style="width: 25%; padding: 6px; border: 1px solid #000;">Workload Recommended</th>`);
-    if (showGroupCol) headerCells.push(`<th style="width: 25%; padding: 6px; border: 1px solid #000;">By Group (1–4)</th>`);
-    headerCells.push(`<th style="padding: 6px; border: 1px solid #000;">Available Teachers</th>`);
-
-    const rowsHtml = substitutionRows.map(r => {
-      const tds = [
-        `<th style="padding: 6px; border: 1px solid #000; text-align: center;">
-          <div>Period ${r.period}</div>
-          <div style="font-size: 11px; font-weight: normal;">${r.info || "—"}</div>
-        </th>`
-      ];
-      if (showWorkloadCol) {
-        tds.push(`<td style="padding: 6px; border: 1px solid #000; text-align: center; font-weight: bold;">${r.bestWorkload}</td>`);
-      }
-      if (showGroupCol) {
-        tds.push(`<td style="padding: 6px; border: 1px solid #000; font-size: 11px;">${r.groupMatches.map(m => `<div><b>${m.teacher}</b> (${[m.info.rank, m.info.qual].filter(Boolean).join(" ")})</div>`).join("") || "—"}</td>`);
-      }
-      tds.push(`<td style="padding: 6px; border: 1px solid #000; font-size: 11px;">${r.freeTeachers.join(", ") || "—"}</td>`);
-      return `<tr>${tds.join("")}</tr>`;
-    }).join("");
-
-    const content = `
-      <div class="print-sheet" style="font-family: sans-serif; padding: 10mm;">
-        <div style="text-align: center; margin-bottom: 6mm;">
-          <h2 style="margin: 0; font-size: 18pt;">${data.schoolName}</h2>
-          <div style="font-size: 12pt; font-weight: bold; margin-top: 2mm;">
-            Substitute Teacher Sheet — Absent: ${absentTeacher}
-          </div>
-          <div style="font-size: 10pt; color: #555; margin-top: 1mm;">
-            Date: ${leaveDate} (${DAY_NAMES[dayIdx] || "Day"}) ${otherLeaves.length ? `· Also on leave: ${otherLeaves.join(", ")}` : ""}
-          </div>
-        </div>
-        <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
-          <thead>
-            <tr style="background: #e5e7eb;">
-              ${headerCells.join("")}
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    triggerPrint(content, { orientation: 'landscape', printSize: 'm' });
+    triggerPrint(buildSheetHtml('print'), { orientation: 'portrait', printSize: 'm' });
   };
 
   const handleExportImage = async (_share?: boolean) => {
@@ -368,7 +357,8 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
         absentTeacher,
         teacherPeriodSummary,
         teacherTotalPeriods: getTeacherTotalPeriods,
-        getLeavesForDate
+        getLeavesForDate,
+        docHtml: buildSheetHtml('png')
       });
 
       const stamp = dateKey();

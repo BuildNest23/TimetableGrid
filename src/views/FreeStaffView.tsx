@@ -4,6 +4,7 @@ import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExp
 import { triggerPrint } from '../utils/printUtils';
 import { DAY_NAMES } from '../types/timetable';
 import { dateKey } from '../utils/dates';
+import { buildFreeStaffDoc } from '../utils/printDocs';
 import { Clock, Printer, Download, Share2 } from 'lucide-react';
 
 export const FreeStaffView: React.FC = () => {
@@ -75,51 +76,30 @@ export const FreeStaffView: React.FC = () => {
     getTeacherTotalPeriods
   ]);
 
+  const buildFreeHtml = (variant: 'print' | 'png') =>
+    buildFreeStaffDoc(
+      data,
+      {
+        dayName: DAY_NAMES[dayIdx] || "",
+        dateLabel: todayKey,
+        rows: freeStaffPerPeriod.map(r => ({
+          period: r.period,
+          free: r.freeList.map(x => ({ teacher: x.teacher, load: x.todayLoad }))
+        }))
+      },
+      variant
+    );
+
   const handlePrint = () => {
-    const rowsHtml = freeStaffPerPeriod.map(r => `
-      <tr>
-        <th style="padding: 8px; border: 1px solid #000; text-align: center; width: 22%;">
-          Period ${r.period}
-        </th>
-        <td style="padding: 8px; border: 1px solid #000; text-align: left; font-size: 11pt;">
-          ${r.freeList.length ? r.freeList.map(x => `${x.teacher} (${x.todayLoad})`).join(", ") : "All teachers busy"}
-        </td>
-      </tr>
-    `).join("");
-
-    const content = `
-      <div class="print-sheet" style="font-family: sans-serif; padding: 10mm;">
-        <div style="text-align: center; margin-bottom: 6mm;">
-          <h2 style="margin: 0; font-size: 18pt;">${data.schoolName}</h2>
-          <div style="font-size: 12pt; font-weight: bold; margin-top: 2mm;">
-            Free Staff — by Period (${DAY_NAMES[dayIdx] || "Today"})
-          </div>
-          <div style="font-size: 10pt; color: #555; margin-top: 1mm;">
-            Date: ${todayKey} · Numbers in brackets show periods taught
-          </div>
-        </div>
-        <table style="width: 100%; border-collapse: collapse;">
-          <thead>
-            <tr style="background: #e5e7eb;">
-              <th style="padding: 8px; border: 1px solid #000; width: 22%;">Period</th>
-              <th style="padding: 8px; border: 1px solid #000; text-align: left;">Free Teachers</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    triggerPrint(content, { orientation: 'landscape', printSize: 'm' });
+    triggerPrint(buildFreeHtml('print'), { orientation: 'portrait', printSize: 'm' });
   };
 
   const handleExportImage = async (_share = false) => {
     const canvas = await createTimetableCanvas('freestaff', data, {
       teacherPeriodSummary,
       teacherTotalPeriods: getTeacherTotalPeriods,
-      getLeavesForDate
+      getLeavesForDate,
+      docHtml: buildFreeHtml('png')
     });
     const stamp = new Date().toISOString().slice(0, 10);
     const fileName = `TimetableGrid-FreeStaff-${stamp}.png`;
