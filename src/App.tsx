@@ -10,9 +10,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { DashboardView } from './views/DashboardView';
 import { TimetableEditorView } from './views/TimetableEditorView';
 import { ViewTimetablesView } from './views/ViewTimetablesView';
-import { SubstituteView } from './views/SubstituteView';
-import { FreeStaffView } from './views/FreeStaffView';
-import { TeachersRosterView } from './views/TeachersRosterView';
+import { StaffHubView } from './views/StaffHubView';
 import { SchoolSetupView } from './views/SchoolSetupView';
 import { MasterDataView } from './views/MasterDataView';
 import { PrintStudioView } from './views/PrintStudioView';
@@ -114,14 +112,14 @@ const AppContent: React.FC = () => {
             />
           )}
           {activeTab === 'views' && <ViewTimetablesView />}
-          {activeTab === 'substitute' && (
-            <SubstituteView
+          {(activeTab === 'substitute' || activeTab === 'freestaff' || activeTab === 'roster') && (
+            <StaffHubView
+              view={activeTab}
+              onSelectView={handleSelectTab}
               initialTeacher={substituteTeacher}
               onTeacherHandled={() => setSubstituteTeacher(undefined)}
             />
           )}
-          {activeTab === 'freestaff' && <FreeStaffView />}
-          {activeTab === 'roster' && <TeachersRosterView />}
           {activeTab === 'settings' && <SchoolSetupView onNavigate={handleSelectTab} />}
           {activeTab === 'master' && <MasterDataView />}
           {activeTab === 'printstudio' && <PrintStudioView />}
