@@ -40,13 +40,8 @@ const AppContent: React.FC = () => {
   useScrollRestore(`utScroll_${activeTab}`);
 
   const [editorJump, setEditorJump] = useState<{ period?: number; teacher?: string } | undefined>(undefined);
-  const [substituteTeacher, setSubstituteTeacher] = useState<string | undefined>(() => {
-    try {
-      return localStorage.getItem("utAbsentTeacher") || undefined;
-    } catch {
-      return undefined;
-    }
-  });
+  // Set only when jumping in from the Dashboard; the Substitute board saves its own absent list per date.
+  const [substituteTeacher, setSubstituteTeacher] = useState<string | undefined>(undefined);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const { undo, redo } = useTimetable();
 
@@ -56,7 +51,6 @@ const AppContent: React.FC = () => {
     if (jumpContext) {
       if (tab === 'substitute' && jumpContext.teacher) {
         setSubstituteTeacher(jumpContext.teacher);
-        try { localStorage.setItem("utAbsentTeacher", jumpContext.teacher); } catch { /* ignore */ }
       }
       setEditorJump(jumpContext);
     }
