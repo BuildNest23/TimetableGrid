@@ -1021,6 +1021,15 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
               placeholder="e.g. 2026-2027"
               className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-emerald-600"
             />
+            <label className="flex items-center gap-2 mt-2 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={data.printAcademicYear !== false}
+                onChange={(e) => updateData(prev => ({ ...prev, printAcademicYear: e.target.checked }))}
+                className="rounded text-emerald-800 focus:ring-emerald-700"
+              />
+              <span>Show in print and exports</span>
+            </label>
           </div>
 
           <div>
