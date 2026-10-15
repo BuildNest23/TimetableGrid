@@ -7,8 +7,6 @@ import {
   Menu,
   Settings,
   BookOpen,
-  Clock,
-  Users,
   Printer,
   X
 } from 'lucide-react';
@@ -32,12 +30,13 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab, onSelect
   const moreTabs = [
     { id: 'printstudio' as ActiveTab, label: 'Print Studio', icon: Printer, desc: 'Live A4 preview, font size slider & multi-page fit' },
     { id: 'master' as ActiveTab, label: 'Teachers, Classes & Subjects', icon: BookOpen, desc: 'Manage master lists and assignments' },
-    { id: 'freestaff' as ActiveTab, label: 'Free Staff', icon: Clock, desc: 'Find teachers with no scheduled class' },
-    { id: 'roster' as ActiveTab, label: 'Teachers Roster', icon: Users, desc: 'Staff directory with groups & workloads' },
     { id: 'settings' as ActiveTab, label: 'School Setup', icon: Settings, desc: 'Configure periods, days, and backup' },
   ];
 
   const isMoreActive = moreTabs.some(t => t.id === currentTab);
+  // Free Staff and Teachers Roster now live inside the Substitute tab
+  const isTabActive = (id: ActiveTab) =>
+    id === 'substitute' ? ['substitute', 'freestaff', 'roster'].includes(currentTab) : currentTab === id;
 
   return (
     <>
@@ -45,7 +44,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab, onSelect
       <nav className="hidden lg:flex items-center justify-center gap-1.5 py-2.5 px-4 bg-white dark:bg-stone-900 border-b border-stone-200 dark:border-stone-800">
         {[...mainTabs, ...moreTabs].map(tab => {
           const Icon = tab.icon;
-          const isActive = currentTab === tab.id;
+          const isActive = isTabActive(tab.id);
           return (
             <button
               key={tab.id}
@@ -72,7 +71,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab, onSelect
         <div className="grid grid-cols-5 h-16 items-center px-1">
           {mainTabs.map(tab => {
             const Icon = tab.icon;
-            const isActive = currentTab === tab.id;
+            const isActive = isTabActive(tab.id);
             return (
               <button
                 key={tab.id}
