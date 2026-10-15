@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTimetable, TimetableIssue } from '../context/TimetableContext';
 import { ConfirmModal, ConfirmDialogOptions } from '../components/ConfirmModal';
-import { ActiveTab } from '../types/timetable';
+import { ActiveTab, PeriodTime } from '../types/timetable';
 import { uiConfirm } from '../utils/uiConfirm';
 import { DAY_NAMES } from '../types/timetable';
 import {
   Settings,
   Clock,
-  Calendar,
   Save,
   Download,
   Upload,
@@ -43,38 +42,434 @@ function parseTimeInput(raw: string): { hour: number; minute: number; suffix: 'A
   return { hour, minute, suffix };
 }
 
-// Format a parsed time into "HH:MM AM/PM"
-function formatTime(hour: number, minute: number, suffix: 'AM' | 'PM'): string {
-  const hh = String(hour).padStart(2, '0');
-  const mm = String(minute).padStart(2, '0');
-  return `${hh}:${mm} ${suffix}`;
+/* ============================================================
+   TIME HELPERS (minutes-from-midnight model)
+   ============================================================ */
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+// minutes -> "08:15 AM" (the format stored in the timetable data)
+function minToStr(m: number): string {
+  const total = ((Math.round(m) % 1440) + 1440) % 1440;
+  const h = Math.floor(total / 60);
+  const mm = total % 60;
+  const suffix = h < 12 ? 'AM' : 'PM';
+  return `${pad2(h % 12 || 12)}:${pad2(mm)} ${suffix}`;
 }
 
-// Decide what suffix to use for a typed value, given the current mode
-// and the last-seen hour (for auto-flip).
-function resolveSuffix(
-  parsed: { hour: number; minute: number; suffix: 'AM' | 'PM' | null },
-  currentMode: 'AM' | 'PM',
-  lastSeenHour: number | null
-): { suffix: 'AM' | 'PM'; flipped: boolean } {
-  // 1. Explicit suffix typed
-  if (parsed.suffix) {
-    return { suffix: parsed.suffix, flipped: parsed.suffix !== currentMode };
+// minutes -> "HH:MM" (value for <input type="time">)
+function minToInput(m: number | null): string {
+  if (m == null) return '';
+  const total = ((Math.round(m) % 1440) + 1440) % 1440;
+  return `${pad2(Math.floor(total / 60))}:${pad2(total % 60)}`;
+}
+
+// "HH:MM" from <input type="time"> -> minutes
+function inputToMin(v: string): number | null {
+  const m = String(v || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+// Stored string ("08:15 AM", "1:15 PM", or legacy "8:15") -> minutes
+function strToMin(raw?: string): number | null {
+  const p = parseTimeInput(raw || '');
+  if (!p) return null;
+  let h = p.hour;
+  if (p.suffix === 'PM' && h < 12) h += 12;
+  else if (p.suffix === 'AM' && h === 12) h = 0;
+  else if (!p.suffix && h >= 1 && h <= 6) h += 12; // legacy value without AM/PM: 1-6 means afternoon
+  return h * 60 + p.minute;
+}
+
+interface RowOverride { dur: number | null; gap: number | null }
+interface TimeModel {
+  start: number | null; // first period start
+  dur: number;          // first period length (default for the rest)
+  bm: number;           // break length
+  rows: RowOverride[];  // manual overrides per period (null = auto-fill)
+}
+interface CalcRow { st: number; en: number; dur: number; gap: number; durManual: boolean; gapManual: boolean; prevEnd: number }
+
+const DEFAULT_DUR = 30;
+const DEFAULT_BREAK = 20;
+
+function emptyRows(n: number): RowOverride[] {
+  return Array.from({ length: n }, () => ({ dur: null, gap: null }));
+}
+
+function cloneRows(model: TimeModel, n: number): RowOverride[] {
+  return Array.from({ length: n }, (_, i) => ({ ...(model.rows[i] ?? { dur: null, gap: null }) }));
+}
+
+// Work out the model (first start, length, break, manual overrides) from saved times
+function inferModel(times: PeriodTime[], ba: number, n: number): TimeModel {
+  const mins = Array.from({ length: n }, (_, i) => ({
+    s: strToMin(times[i]?.start),
+    e: strToMin(times[i]?.end)
+  }));
+  const start = mins[0]?.s ?? null;
+  if (start == null) return { start: null, dur: DEFAULT_DUR, bm: DEFAULT_BREAK, rows: emptyRows(n) };
+
+  let dur = DEFAULT_DUR;
+  if (mins[0].e != null && mins[0].e > start) dur = mins[0].e - start;
+
+  let bm = DEFAULT_BREAK;
+  if (ba > 0 && ba < n && mins[ba].s != null && mins[ba - 1].e != null) {
+    bm = Math.max(0, (mins[ba].s as number) - (mins[ba - 1].e as number));
   }
-  // 2. Hour = 12 → assume PM
-  if (parsed.hour === 12) {
-    return { suffix: 'PM', flipped: currentMode !== 'PM' };
+
+  const rows = emptyRows(n);
+  let cur = dur;
+  for (let i = 1; i < n; i++) {
+    const { s, e } = mins[i];
+    const prevEnd = mins[i - 1].e;
+    if (s != null && prevEnd != null) {
+      const g = s - prevEnd;
+      const def = ba === i ? bm : 0;
+      if (g >= 0 && g !== def) rows[i].gap = g;
+    }
+    if (s != null && e != null && e > s) {
+      const d = e - s;
+      if (d !== cur) rows[i].dur = d;
+      cur = d;
+    }
   }
-  // 3. Hour 1-11
-  if (currentMode === 'PM') {
-    return { suffix: 'PM', flipped: false };
+  return { start, dur, bm, rows };
+}
+
+function calcModel(model: TimeModel, ba: number, n: number): CalcRow[] {
+  if (model.start == null) return [];
+  const out: CalcRow[] = [];
+  let prevEnd = model.start;
+  let cur = model.dur;
+  for (let i = 0; i < n; i++) {
+    const r = model.rows[i] ?? { dur: null, gap: null };
+    if (r.dur != null) cur = r.dur;
+    const gap = i === 0 ? 0 : (r.gap != null ? r.gap : (ba === i ? model.bm : 0));
+    const st = i === 0 ? model.start : prevEnd + gap;
+    const en = st + cur;
+    out.push({ st, en, dur: cur, gap, durManual: r.dur != null, gapManual: r.gap != null, prevEnd });
+    prevEnd = en;
   }
-  // currentMode === 'AM'
-  if (lastSeenHour !== null && parsed.hour < lastSeenHour) {
-    // crossing noon → flip to PM
-    return { suffix: 'PM', flipped: true };
-  }
-  return { suffix: 'AM', flipped: false };
+  return out;
+}
+
+/* ============================================================
+   SMALL INPUTS
+   ============================================================ */
+
+const fieldCls = 'w-full px-2.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-lg text-xs font-semibold text-stone-900 dark:text-stone-100 dark:[color-scheme:dark]';
+const editedCls = '!border-emerald-600 dark:!border-emerald-500';
+
+// Number input that only commits on blur / Enter, so typing "25" never flickers through "2"
+const MinInput: React.FC<{ value: number; onCommit: (v: number) => void; className?: string; min?: number; ariaLabel: string }> = ({ value, onCommit, className = '', min = 0, ariaLabel }) => {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  const commit = () => {
+    const v = parseInt(text, 10);
+    if (isNaN(v) || v < min) { setText(String(value)); return; }
+    if (v !== value) onCommit(v);
+  };
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={min}
+      aria-label={ariaLabel}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      className={`${fieldCls} text-center ${className}`}
+    />
+  );
+};
+
+/* ============================================================
+   SCHEDULE EDITOR — one grid (normal days OR the Friday grid)
+   ============================================================ */
+
+interface ScheduleEditorProps {
+  periodNums: number[];
+  times: PeriodTime[];
+  /** Value of the "Break after" select (0 = none / same as normal) */
+  breakAfterValue: number;
+  /** What a break position of 0 means: 0 for normal days, normal break position for Friday */
+  zeroMeans: number;
+  zeroLabel: string;
+  breakLabel: string;
+  assembly: { start: string; end: string };
+  chain: boolean;
+  onBreakAfterChange: (n: number) => void;
+  onTimesChange: (t: PeriodTime[]) => void;
+  onAssemblyChange: (a: { start: string; end: string }) => void;
+  onChainChange: (on: boolean) => void;
+}
+
+const ScheduleEditor: React.FC<ScheduleEditorProps> = (p) => {
+  const n = p.periodNums.length;
+  const ba = p.breakAfterValue > 0 ? p.breakAfterValue : p.zeroMeans;
+
+  const sig = JSON.stringify(p.times);
+  const lastSig = useRef(sig);
+  const [model, setModel] = useState<TimeModel>(() => inferModel(p.times, ba, n));
+
+  // Times changed from outside (copy button, scenario load…) → rebuild the model
+  useEffect(() => {
+    if (sig !== lastSig.current) {
+      lastSig.current = sig;
+      setModel(inferModel(p.times, ba, n));
+    }
+  }, [sig]);
+
+  const commit = (next: TimeModel) => {
+    setModel(next);
+    if (next.start == null) return;
+    const rows = calcModel(next, ba, n);
+    const times: PeriodTime[] = rows.map(r => ({ start: minToStr(r.st), end: minToStr(r.en) }));
+    lastSig.current = JSON.stringify(times);
+    p.onTimesChange(times);
+  };
+
+  // Break position / period count changed → re-flow times (skip the first render)
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return; }
+    if (model.start != null) commit(model);
+  }, [ba, n]);
+
+  const rows = calcModel(model, ba, n);
+  const hasStart = model.start != null;
+
+  const setFirst = (m: number) => commit({ ...model, start: m });
+  const setLen = (v: number) => commit({ ...model, dur: Math.max(1, v) });
+  const setBreakLen = (v: number) => {
+    const r = cloneRows(model, n);
+    if (ba > 0 && ba < n) r[ba].gap = null;
+    commit({ ...model, bm: Math.max(0, v), rows: r });
+  };
+  const setRowStart = (i: number, m: number) => {
+    if (i === 0) return setFirst(m);
+    if (!hasStart) return;
+    const r = cloneRows(model, n);
+    r[i].gap = Math.max(0, m - rows[i].prevEnd);
+    commit({ ...model, rows: r });
+  };
+  const setRowEnd = (i: number, m: number) => {
+    if (!hasStart) return;
+    const d = Math.max(1, m - rows[i].st);
+    if (i === 0) return commit({ ...model, dur: d });
+    const r = cloneRows(model, n);
+    r[i].dur = d;
+    commit({ ...model, rows: r });
+  };
+  const setRowDur = (i: number, d: number) => {
+    if (!hasStart) return;
+    const v = Math.max(1, d);
+    if (i === 0) return commit({ ...model, dur: v });
+    const r = cloneRows(model, n);
+    r[i].dur = v;
+    commit({ ...model, rows: r });
+  };
+  const setRowGap = (i: number, g: number) => {
+    if (i === ba) return setBreakLen(g);
+    const r = cloneRows(model, n);
+    r[i].gap = Math.max(0, g);
+    commit({ ...model, rows: r });
+  };
+  const resetRow = (i: number) => {
+    const r = cloneRows(model, n);
+    r[i] = { dur: null, gap: null };
+    commit({ ...model, rows: r });
+  };
+  const resetGap = (i: number) => {
+    const r = cloneRows(model, n);
+    r[i].gap = null;
+    commit({ ...model, rows: r });
+  };
+
+  const setAssemblyStart = (v: string) => {
+    const m = inputToMin(v);
+    if (m == null) return;
+    p.onAssemblyChange({ start: minToStr(m), end: p.assembly.end });
+  };
+  const setAssemblyEnd = (v: string) => {
+    const m = inputToMin(v);
+    if (m == null) return;
+    p.onAssemblyChange({ start: p.assembly.start, end: minToStr(m) });
+    if (p.chain) setFirst(m);
+  };
+
+  const labelCls = 'block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1';
+  const boxCls = 'p-3.5 bg-stone-50 dark:bg-stone-950/60 rounded-2xl border border-stone-200 dark:border-stone-800';
+
+  return (
+    <div className="space-y-3">
+      {/* Assembly */}
+      <div className={boxCls}>
+        <div className="text-xs font-bold text-stone-800 dark:text-stone-200 mb-2">Assembly <span className="font-medium text-stone-500">(optional)</span></div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className={labelCls}>Starts</label>
+            <input
+              type="time"
+              value={minToInput(strToMin(p.assembly.start))}
+              onChange={(e) => setAssemblyStart(e.target.value)}
+              className={fieldCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Ends</label>
+            <input
+              type="time"
+              value={minToInput(strToMin(p.assembly.end))}
+              onChange={(e) => setAssemblyEnd(e.target.value)}
+              className={fieldCls}
+            />
+          </div>
+        </div>
+        <label className="flex items-start gap-2 mt-2.5 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={p.chain}
+            onChange={(e) => p.onChainChange(e.target.checked)}
+            className="mt-0.5 rounded text-emerald-800 focus:ring-emerald-700"
+          />
+          <span>Period 1 starts when assembly ends</span>
+        </label>
+      </div>
+
+      {/* Quick setup */}
+      <div className={boxCls}>
+        <div className="text-xs font-bold text-stone-800 dark:text-stone-200 mb-2">Quick setup</div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div>
+            <label className={labelCls}>First period starts</label>
+            <input
+              type="time"
+              value={minToInput(model.start)}
+              onChange={(e) => { const m = inputToMin(e.target.value); if (m != null) setFirst(m); }}
+              className={fieldCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Period length (min)</label>
+            <MinInput value={model.dur} min={1} ariaLabel="Period length in minutes" onCommit={setLen} />
+          </div>
+          <div>
+            <label className={labelCls}>Break after</label>
+            <select
+              value={p.breakAfterValue}
+              onChange={(e) => p.onBreakAfterChange(Number(e.target.value))}
+              className={fieldCls}
+            >
+              <option value="0">{p.zeroLabel}</option>
+              {p.periodNums.map(pn => (
+                <option key={pn} value={pn}>Period {pn}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Break length (min)</label>
+            <MinInput value={model.bm} min={0} ariaLabel="Break length in minutes" onCommit={setBreakLen} />
+          </div>
+        </div>
+        <p className="text-[11px] text-stone-500 dark:text-stone-400 font-medium mt-2.5 leading-relaxed">
+          Set these four and every period fills in. Change any single time below and the periods after it follow.
+        </p>
+      </div>
+
+      {/* Period grid */}
+      <div className={boxCls}>
+        <div className="text-xs font-bold text-stone-800 dark:text-stone-200 mb-2">Periods</div>
+        {!hasStart && (
+          <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold mb-2">
+            Enter the first period's start time to fill the whole day.
+          </p>
+        )}
+        <div className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)_56px_22px] gap-1.5 items-center mb-1 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+          <span />
+          <span>Start</span>
+          <span>End</span>
+          <span className="text-center">Min</span>
+          <span />
+        </div>
+
+        {p.periodNums.map((pn, i) => {
+          const r = rows[i];
+          const showGap = !!r && i > 0 && (r.gap > 0 || ba === i || r.gapManual);
+          const isBreak = ba === i;
+          const manualRow = !!r && (r.durManual || (i > 0 && r.gapManual && !isBreak));
+          return (
+            <React.Fragment key={pn}>
+              {showGap && r && (
+                <div className="grid grid-cols-[minmax(0,1fr)_56px_22px] gap-1.5 items-center bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-lg px-2 py-1 my-1">
+                  <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 truncate">
+                    {isBreak ? (p.breakLabel || 'Break') : 'Gap'} · {minToStr(r.prevEnd)} → {minToStr(r.st)}
+                  </span>
+                  <MinInput
+                    value={r.gap}
+                    min={0}
+                    ariaLabel={`${isBreak ? 'Break' : 'Gap'} length in minutes`}
+                    className={r.gapManual && !isBreak ? editedCls : ''}
+                    onCommit={(v) => setRowGap(i, v)}
+                  />
+                  {r.gapManual && !isBreak ? (
+                    <button type="button" onClick={() => resetGap(i)} aria-label="Reset gap to auto" title="Reset gap to auto" className="text-emerald-700 dark:text-emerald-400 text-sm leading-none">↺</button>
+                  ) : <span />}
+                </div>
+              )}
+              <div className="grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)_56px_22px] gap-1.5 items-center mb-1.5">
+                <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-400">P{pn}</span>
+                <input
+                  type="time"
+                  aria-label={`Period ${pn} start`}
+                  value={minToInput(r ? r.st : null)}
+                  onChange={(e) => { const m = inputToMin(e.target.value); if (m != null) setRowStart(i, m); }}
+                  className={`${fieldCls} ${i > 0 && r?.gapManual && !isBreak ? editedCls : ''}`}
+                />
+                <input
+                  type="time"
+                  aria-label={`Period ${pn} end`}
+                  value={minToInput(r ? r.en : null)}
+                  onChange={(e) => { const m = inputToMin(e.target.value); if (m != null) setRowEnd(i, m); }}
+                  className={`${fieldCls} ${r?.durManual ? editedCls : ''}`}
+                />
+                {r ? (
+                  <MinInput
+                    value={r.dur}
+                    min={1}
+                    ariaLabel={`Period ${pn} length in minutes`}
+                    className={r.durManual ? editedCls : ''}
+                    onCommit={(v) => setRowDur(i, v)}
+                  />
+                ) : (
+                  <input type="text" disabled aria-label={`Period ${pn} length`} className={`${fieldCls} text-center opacity-50`} />
+                )}
+                {manualRow ? (
+                  <button type="button" onClick={() => resetRow(i)} aria-label={`Reset period ${pn} to auto`} title="Reset to auto" className="text-emerald-700 dark:text-emerald-400 text-sm leading-none">↺</button>
+                ) : <span />}
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        <p className="text-[11px] text-stone-500 dark:text-stone-400 font-medium mt-2 leading-relaxed">
+          Green outline = you changed it. Tap ↺ to hand it back to auto-fill.
+          {rows.length > 0 && <> Day runs <b>{minToStr(rows[0].st)}</b> to <b>{minToStr(rows[rows.length - 1].en)}</b>.</>}
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// Make sure a times array has exactly one entry per period
+function padTimes(times: PeriodTime[] | undefined, n: number): PeriodTime[] {
+  return Array.from({ length: n }, (_, i) => ({
+    start: times?.[i]?.start || '',
+    end: times?.[i]?.end || ''
+  }));
 }
 
 export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) => {
@@ -100,8 +495,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
 
   const [timingsTitle, setTimingsTitle] = useState(data.schoolTimingsTitle || "SCHOOL TIMINGS");
   const [effectiveFrom, setEffectiveFrom] = useState(data.effectiveFromDate || "");
-  const [assemblyStart, setAssemblyStart] = useState(data.assemblyTime?.start || "");
-  const [assemblyEnd, setAssemblyEnd] = useState(data.assemblyTime?.end || "");
+  const [timingTab, setTimingTab] = useState<'normal' | 'friday'>('normal');
 
   const [fridayEnabled, setFridayEnabled] = useState(data.fridayTimings?.enabled || false);
   const [fridayDayIdx, setFridayDayIdx] = useState(data.fridayTimings?.dayIndex ?? 4);
@@ -113,23 +507,11 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
   const [selectedScenario, setSelectedScenario] = useState("");
   const scenarioNames = getScenarioNames();
 
-  // Tracks which inputs were auto-filled last time — so we never overwrite typed values
-  const [autoFilled, setAutoFilled] = useState<Record<string, boolean>>({});
+  const specialDayName = data.days[fridayDayIdx] || 'Friday';
 
-  // AM/PM modes for main and Friday schedules (independent)
-  const [mainAmPmMode, setMainAmPmMode] = useState<'AM' | 'PM'>('AM');
-  const [fridayAmPmMode, setFridayAmPmMode] = useState<'AM' | 'PM'>('AM');
-
-  const markAutoFilled = (key: string) =>
-    setAutoFilled(prev => ({ ...prev, [key]: true }));
-
-  const clearAutoFilled = (key: string) =>
-    setAutoFilled(prev => {
-      if (!prev[key]) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
+  const toggleAutoChain = (on: boolean) => {
+    updateData(prev => ({ ...prev, autoChainTimes: on }));
+  };
 
   // --- Storage quota indicator ---
   const [storageInfo, setStorageInfo] = useState<{ bytes: number; quotaBytes: number } | null>(null);
@@ -168,222 +550,6 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
     isOpen: false,
     options: { message: "" }
   });
-
-  /* ============================================================
-     FORMAT-ON-BLUR HELPERS
-     ============================================================ */
-
-  // Get the last-seen-hour for a schedule — used for auto-flip across noon.
-  // Reads the previous period's end hour (or assembly end for Period 1).
-  const getLastSeenHourMain = (idx: number): number | null => {
-    if (idx === 0) {
-      const ae = data.assemblyTime?.end || '';
-      const p = parseTimeInput(ae);
-      return p ? p.hour : null;
-    }
-    const prevEnd = data.periodTimes?.[idx - 1]?.end || '';
-    const p = parseTimeInput(prevEnd);
-    return p ? p.hour : null;
-  };
-
-  const getLastSeenHourFriday = (idx: number): number | null => {
-    if (idx === 0) {
-      const ae = data.fridayTimings?.assemblyTime?.end || '';
-      const p = parseTimeInput(ae);
-      return p ? p.hour : null;
-    }
-    const prevEnd = data.fridayTimings?.periodTimes?.[idx - 1]?.end || '';
-    const p = parseTimeInput(prevEnd);
-    return p ? p.hour : null;
-  };
-
-  // Format a typed value on blur — main schedule. Returns formatted string (or original if unparseable).
-  const formatMainValue = (raw: string, idx: number | 'assembly'): string => {
-    const parsed = parseTimeInput(raw);
-    if (!parsed) return raw;
-    const lastSeen = idx === 'assembly' ? null : getLastSeenHourMain(idx as number);
-    const { suffix, flipped } = resolveSuffix(parsed, mainAmPmMode, lastSeen);
-    if (flipped) setMainAmPmMode(suffix);
-    return formatTime(parsed.hour, parsed.minute, suffix);
-  };
-
-  const formatFridayValue = (raw: string, idx: number | 'assembly'): string => {
-    const parsed = parseTimeInput(raw);
-    if (!parsed) return raw;
-    const lastSeen = idx === 'assembly' ? null : getLastSeenHourFriday(idx as number);
-    const { suffix, flipped } = resolveSuffix(parsed, fridayAmPmMode, lastSeen);
-    if (flipped) setFridayAmPmMode(suffix);
-    return formatTime(parsed.hour, parsed.minute, suffix);
-  };
-
-  /* ============================================================
-     AUTO-CHAINING HELPERS
-     ============================================================ */
-
-  const canAutoFill = (key: string, currentValue: string): boolean => {
-    if (!currentValue || !currentValue.trim()) return true;
-    return !!autoFilled[key];
-  };
-
-  // ---------- Main: Assembly End → Period 1 Start ----------
-  const handleMainAssemblyEndBlur = (rawValue: string) => {
-    const formatted = formatMainValue(rawValue, 'assembly');
-    setAssemblyEnd(formatted);
-    updateData(prev => ({ ...prev, assemblyTime: { ...prev.assemblyTime, end: formatted } }), true);
-
-    if (!data.autoChainTimes || !formatted) return;
-    const key = 'main-p0-start';
-    const currentP1Start = data.periodTimes?.[0]?.start || '';
-    if (!canAutoFill(key, currentP1Start)) return;
-
-    updateData(prev => {
-      const next = [...prev.periodTimes];
-      if (!next[0]) next[0] = { start: '', end: '' };
-      next[0] = { ...next[0], start: formatted };
-      return { ...prev, periodTimes: next };
-    }, true);
-    markAutoFilled(key);
-  };
-
-  // ---------- Main: Period N End → Period N+1 Start ----------
-  const handleMainPeriodEndBlur = (idx: number, rawValue: string) => {
-    const formatted = formatMainValue(rawValue, idx);
-    updateData(prev => {
-      const next = [...prev.periodTimes];
-      if (!next[idx]) next[idx] = { start: '', end: '' };
-      next[idx] = { ...next[idx], end: formatted };
-      return { ...prev, periodTimes: next };
-    }, true);
-
-    if (!data.autoChainTimes || !formatted) return;
-    if (idx + 1 >= data.periods.length) return;
-    const thisPeriodNum = data.periods[idx];
-    if (data.breakAfter && data.breakAfter === thisPeriodNum) return;
-
-    const key = `main-p${idx + 1}-start`;
-    const currentNextStart = data.periodTimes?.[idx + 1]?.start || '';
-    if (!canAutoFill(key, currentNextStart)) return;
-
-    updateData(prev => {
-      const next = [...prev.periodTimes];
-      if (!next[idx + 1]) next[idx + 1] = { start: '', end: '' };
-      next[idx + 1] = { ...next[idx + 1], start: formatted };
-      return { ...prev, periodTimes: next };
-    }, true);
-    markAutoFilled(key);
-  };
-
-  // ---------- Main: Start blur (padding only, no chaining) ----------
-  const handleMainPeriodStartBlur = (idx: number, rawValue: string) => {
-    const formatted = formatMainValue(rawValue, idx);
-    clearAutoFilled(`main-p${idx}-start`);
-    updateData(prev => {
-      const next = [...prev.periodTimes];
-      if (!next[idx]) next[idx] = { start: '', end: '' };
-      next[idx] = { ...next[idx], start: formatted };
-      return { ...prev, periodTimes: next };
-    }, true);
-  };
-
-  // ---------- Main: Assembly Start blur (padding only) ----------
-  const handleMainAssemblyStartBlur = (rawValue: string) => {
-    const parsed = parseTimeInput(rawValue);
-    let formatted = rawValue;
-    if (parsed) {
-      const { suffix } = resolveSuffix(parsed, mainAmPmMode, null);
-      formatted = formatTime(parsed.hour, parsed.minute, suffix);
-    }
-    setAssemblyStart(formatted);
-    updateData(prev => ({ ...prev, assemblyTime: { ...prev.assemblyTime, start: formatted } }), true);
-  };
-
-  // ---------- Friday: Assembly End → Period 1 Start ----------
-  const handleFridayAssemblyEndBlur = (rawValue: string) => {
-    const formatted = formatFridayValue(rawValue, 'assembly');
-    updateData(prev => ({
-      ...prev,
-      fridayTimings: {
-        ...prev.fridayTimings,
-        assemblyTime: { ...prev.fridayTimings.assemblyTime, end: formatted }
-      }
-    }), true);
-
-    if (!data.autoChainTimes || !formatted) return;
-    const key = 'ft-p0-start';
-    const currentP1Start = data.fridayTimings?.periodTimes?.[0]?.start || '';
-    if (!canAutoFill(key, currentP1Start)) return;
-
-    updateData(prev => {
-      const next = [...(prev.fridayTimings.periodTimes || [])];
-      while (next.length < prev.periods.length) next.push({ start: '', end: '' });
-      next[0] = { ...next[0], start: formatted };
-      return { ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: next } };
-    }, true);
-    markAutoFilled(key);
-  };
-
-  // ---------- Friday: Period N End → Period N+1 Start ----------
-  const handleFridayPeriodEndBlur = (idx: number, rawValue: string) => {
-    const formatted = formatFridayValue(rawValue, idx);
-    updateData(prev => {
-      const next = [...(prev.fridayTimings.periodTimes || [])];
-      while (next.length < prev.periods.length) next.push({ start: '', end: '' });
-      next[idx] = { ...next[idx], end: formatted };
-      return { ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: next } };
-    }, true);
-
-    if (!data.autoChainTimes || !formatted) return;
-    if (idx + 1 >= data.periods.length) return;
-    const thisPeriodNum = data.periods[idx];
-    if (fridayBreakAfter && fridayBreakAfter === thisPeriodNum) return;
-
-    const key = `ft-p${idx + 1}-start`;
-    const currentNextStart = data.fridayTimings?.periodTimes?.[idx + 1]?.start || '';
-    if (!canAutoFill(key, currentNextStart)) return;
-
-    updateData(prev => {
-      const next = [...(prev.fridayTimings.periodTimes || [])];
-      while (next.length < prev.periods.length) next.push({ start: '', end: '' });
-      next[idx + 1] = { ...next[idx + 1], start: formatted };
-      return { ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: next } };
-    }, true);
-    markAutoFilled(key);
-  };
-
-  // ---------- Friday: Start blur (padding only) ----------
-  const handleFridayPeriodStartBlur = (idx: number, rawValue: string) => {
-    const formatted = formatFridayValue(rawValue, idx);
-    clearAutoFilled(`ft-p${idx}-start`);
-    updateData(prev => {
-      const next = [...(prev.fridayTimings.periodTimes || [])];
-      while (next.length < prev.periods.length) next.push({ start: '', end: '' });
-      next[idx] = { ...next[idx], start: formatted };
-      return { ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: next } };
-    }, true);
-  };
-
-  const handleFridayAssemblyStartBlur = (rawValue: string) => {
-    const parsed = parseTimeInput(rawValue);
-    let formatted = rawValue;
-    if (parsed) {
-      const { suffix } = resolveSuffix(parsed, fridayAmPmMode, null);
-      formatted = formatTime(parsed.hour, parsed.minute, suffix);
-    }
-    updateData(prev => ({
-      ...prev,
-      fridayTimings: {
-        ...prev.fridayTimings,
-        assemblyTime: { ...prev.fridayTimings.assemblyTime, start: formatted }
-      }
-    }), true);
-  };
-
-  const toggleAutoChain = (on: boolean) => {
-    updateData(prev => ({ ...prev, autoChainTimes: on }));
-    if (!on) {
-      setAutoFilled({});
-    }
-  };
 
   /* ============================================================
      OTHER ACTIONS
@@ -463,8 +629,7 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
     updateData(prev => ({
       ...prev,
       schoolTimingsTitle: timingsTitle.trim(),
-      effectiveFromDate: effectiveFrom.trim(),
-      assemblyTime: { start: assemblyStart.trim(), end: assemblyEnd.trim() }
+      effectiveFromDate: effectiveFrom.trim()
     }));
     alert("Timings configuration saved.");
   };
@@ -1011,335 +1176,150 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
           </div>
           <div>
             <h2 className="text-base font-bold text-stone-900 dark:text-stone-100">
-              School Timings Grid
+              School Timings
             </h2>
-            <p className="text-xs text-stone-500 font-medium">Configure start and end times for assembly and each instructional period</p>
+            <p className="text-xs text-stone-500 font-medium">Enter the first period and its length — the rest fills in. Correct any period you need.</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          <div>
-            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-              Timings Sheet Title
-            </label>
-            <input
-              type="text"
-              value={timingsTitle}
-              onChange={(e) => setTimingsTitle(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-              Effective Date (w.e.f.)
-            </label>
-            <input
-              type="text"
-              value={effectiveFrom}
-              onChange={(e) => setEffectiveFrom(e.target.value)}
-              placeholder="e.g. 01/09/2026"
-              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-              Assembly Start
-            </label>
-            <input
-              type="text"
-              defaultValue={assemblyStart}
-              key={`asm-start-${assemblyStart}`}
-              onBlur={(e) => handleMainAssemblyStartBlur(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-              placeholder="e.g. 7:45"
-              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-              Assembly End
-            </label>
-            <input
-              type="text"
-              defaultValue={assemblyEnd}
-              key={`asm-end-${assemblyEnd}`}
-              onBlur={(e) => handleMainAssemblyEndBlur(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-              placeholder="e.g. 8:00"
-              className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold"
-            />
-          </div>
-        </div>
-
-        {/* AM/PM toggle */}
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setMainAmPmMode('AM')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                mainAmPmMode === 'AM'
-                  ? 'bg-emerald-800 text-white shadow-xs'
-                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
-              }`}
-            >
-              AM
-            </button>
-            <button
-              type="button"
-              onClick={() => setMainAmPmMode('PM')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                mainAmPmMode === 'PM'
-                  ? 'bg-emerald-800 text-white shadow-xs'
-                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
-              }`}
-            >
-              PM
-            </button>
-          </div>
-          <span className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">
-            Times you type without AM/PM use this mode. Say <b>8:15</b> → <b>08:15 {mainAmPmMode}</b>.
-          </span>
-        </div>
-
-        {/* Auto-chain toggle */}
-        <label className="flex items-center gap-2 mb-3 text-xs font-bold text-stone-700 dark:text-stone-300 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={!!data.autoChainTimes}
-            onChange={(e) => toggleAutoChain(e.target.checked)}
-            className="rounded text-emerald-800 focus:ring-emerald-700"
-          />
-          <span>Auto-fill next period's start from previous period's end</span>
-        </label>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
-          {data.periods.map((p, idx) => (
-            <div key={p} className="p-2.5 bg-stone-50 dark:bg-stone-950/60 rounded-xl border border-stone-200 dark:border-stone-800">
-              <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-400 block mb-1">
-                Period {p}
-              </span>
-              <input
-                type="text"
-                defaultValue={data.periodTimes[idx]?.start || ""}
-                key={`main-p${idx}-start-${data.periodTimes[idx]?.start || ''}`}
-                onBlur={(e) => handleMainPeriodStartBlur(idx, e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                placeholder="Start"
-                className="w-full text-xs px-2 py-1 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-md mb-1"
-              />
-              <input
-                type="text"
-                defaultValue={data.periodTimes[idx]?.end || ""}
-                key={`main-p${idx}-end-${data.periodTimes[idx]?.end || ''}`}
-                onBlur={(e) => handleMainPeriodEndBlur(idx, e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                placeholder="End"
-                className="w-full text-xs px-2 py-1 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-md"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="flex justify-end">
+        {/* Normal / Friday switch */}
+        <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 rounded-xl p-1 mb-4">
           <button
             type="button"
-            onClick={handleSaveTimings}
-            className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition"
+            onClick={() => setTimingTab('normal')}
+            className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition ${
+              timingTab === 'normal'
+                ? 'bg-emerald-800 text-white shadow-xs'
+                : 'text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
+            }`}
           >
-            Save Timings
+            Normal days
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimingTab('friday')}
+            className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition ${
+              timingTab === 'friday'
+                ? 'bg-emerald-800 text-white shadow-xs'
+                : 'text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
+            }`}
+          >
+            {specialDayName}
           </button>
         </div>
-      </div>
 
-      {/* Friday / Day-specific timings — always visible; checkbox only controls print layout */}
-      <div className="bg-white dark:bg-stone-900 rounded-3xl p-5 sm:p-6 border border-stone-200 dark:border-stone-800 shadow-xs">
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-stone-200 dark:border-stone-800">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded-xl">
-              <Calendar className="w-5 h-5" />
+        {timingTab === 'normal' ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Timings Sheet Title
+                </label>
+                <input
+                  type="text"
+                  value={timingsTitle}
+                  onChange={(e) => setTimingsTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Effective Date (w.e.f.)
+                </label>
+                <input
+                  type="text"
+                  value={effectiveFrom}
+                  onChange={(e) => setEffectiveFrom(e.target.value)}
+                  placeholder="e.g. 01/09/2026"
+                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-sm font-semibold text-stone-900 dark:text-stone-100"
+                />
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold text-stone-900 dark:text-stone-100">
-                Friday / Day-Specific Timings
-              </h2>
-              <p className="text-xs text-stone-500 font-medium">Shorter periods or Jumma prayer recess on designated days</p>
-            </div>
-          </div>
 
-          <label className="flex items-center gap-2 text-xs font-bold text-stone-800 dark:text-stone-200 cursor-pointer max-w-[240px] text-right">
-            <input
-              type="checkbox"
-              checked={fridayEnabled}
-              onChange={(e) => setFridayEnabled(e.target.checked)}
-              className="rounded text-emerald-800 focus:ring-emerald-700"
+            <ScheduleEditor
+              key="normal-grid"
+              periodNums={data.periods}
+              times={padTimes(data.periodTimes, data.periods.length)}
+              breakAfterValue={data.breakAfter || 0}
+              zeroMeans={0}
+              zeroLabel="No break"
+              breakLabel="Break"
+              assembly={data.assemblyTime || { start: '', end: '' }}
+              chain={!!data.autoChainTimes}
+              onBreakAfterChange={(n) => {
+                setBreakAfter(n);
+                updateData(prev => ({ ...prev, breakAfter: n }), true);
+              }}
+              onTimesChange={(t) => updateData(prev => ({ ...prev, periodTimes: t }), true)}
+              onAssemblyChange={(a) => updateData(prev => ({ ...prev, assemblyTime: a }), true)}
+              onChainChange={toggleAutoChain}
             />
-            <span>Print on its own page (unchecked = merge into main sheet)</span>
-          </label>
-        </div>
 
-        <div className="space-y-4 animate-in fade-in duration-150">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                Designated Day
-              </label>
-              <select
-                value={fridayDayIdx}
-                onChange={(e) => setFridayDayIdx(Number(e.target.value))}
-                className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-              >
-                {data.days.map((d, i) => (
-                  <option key={d} value={i}>{d}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                Break Label
-              </label>
-              <input
-                type="text"
-                value={fridayBreakLabel}
-                onChange={(e) => setFridayBreakLabel(e.target.value)}
-                placeholder="e.g. JUMMA BREAK"
-                className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                Break Position
-              </label>
-              <select
-                value={fridayBreakAfter}
-                onChange={(e) => setFridayBreakAfter(Number(e.target.value))}
-                className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-              >
-                <option value="0">No Break</option>
-                {data.periods.map(p => (
-                  <option key={p} value={p}>After Period {p}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                Notice Note
-              </label>
-              <input
-                type="text"
-                value={fridayNote}
-                onChange={(e) => setFridayNote(e.target.value)}
-                placeholder="e.g. Jumma prayer 12:30 – 1:15"
-                className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-              />
-            </div>
-          </div>
-
-          {/* Friday assembly fields */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                Assembly Start (Friday)
-              </label>
-              <input
-                type="text"
-                defaultValue={data.fridayTimings?.assemblyTime?.start || ''}
-                key={`ft-asm-start-${data.fridayTimings?.assemblyTime?.start || ''}`}
-                onBlur={(e) => handleFridayAssemblyStartBlur(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                placeholder="e.g. 7:45"
-                className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
-                Assembly End (Friday)
-              </label>
-              <input
-                type="text"
-                defaultValue={data.fridayTimings?.assemblyTime?.end || ''}
-                key={`ft-asm-end-${data.fridayTimings?.assemblyTime?.end || ''}`}
-                onBlur={(e) => handleFridayAssemblyEndBlur(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                placeholder="e.g. 8:00"
-                className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
-              />
-            </div>
-          </div>
-
-          {/* Friday AM/PM toggle */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 rounded-xl p-1">
+            <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() => setFridayAmPmMode('AM')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                  fridayAmPmMode === 'AM'
-                    ? 'bg-emerald-800 text-white shadow-xs'
-                    : 'text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
-                }`}
+                onClick={handleSaveTimings}
+                className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition"
               >
-                AM
-              </button>
-              <button
-                type="button"
-                onClick={() => setFridayAmPmMode('PM')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                  fridayAmPmMode === 'PM'
-                    ? 'bg-emerald-800 text-white shadow-xs'
-                    : 'text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
-                }`}
-              >
-                PM
+                Save Timings
               </button>
             </div>
-            <span className="text-[11px] text-stone-500 dark:text-stone-400 font-medium">
-              Times you type without AM/PM use this mode. Say <b>8:15</b> → <b>08:15 {fridayAmPmMode}</b>.
-            </span>
           </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Designated Day
+                </label>
+                <select
+                  value={fridayDayIdx}
+                  onChange={(e) => setFridayDayIdx(Number(e.target.value))}
+                  className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
+                >
+                  {data.days.map((d, i) => (
+                    <option key={d} value={i}>{d}</option>
+                  ))}
+                </select>
+              </div>
 
-          <div>
-            <div className="text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-2">
-              Period times for this day
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {data.periods.map((p, idx) => {
-                const pt = (data.fridayTimings.periodTimes && data.fridayTimings.periodTimes[idx]) || { start: '', end: '' };
-                return (
-                  <div key={p} className="p-2 bg-stone-50 dark:bg-stone-950/60 rounded-xl border border-stone-200 dark:border-stone-800">
-                    <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-400 block mb-1">Period {p}</span>
-                    <input
-                      type="text"
-                      defaultValue={pt.start || ''}
-                      key={`ft-p${idx}-start-${pt.start || ''}`}
-                      onBlur={(e) => handleFridayPeriodStartBlur(idx, e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                      placeholder="Start"
-                      className="w-full text-xs px-2 py-1 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-md mb-1"
-                    />
-                    <input
-                      type="text"
-                      defaultValue={pt.end || ''}
-                      key={`ft-p${idx}-end-${pt.end || ''}`}
-                      onBlur={(e) => handleFridayPeriodEndBlur(idx, e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                      placeholder="End"
-                      className="w-full text-xs px-2 py-1 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-md"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+              <div>
+                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Break Label
+                </label>
+                <input
+                  type="text"
+                  value={fridayBreakLabel}
+                  onChange={(e) => setFridayBreakLabel(e.target.value)}
+                  placeholder="e.g. JUMMA BREAK"
+                  className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
+                />
+              </div>
 
-          <div className="flex flex-wrap justify-end gap-2">
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Notice Note
+                </label>
+                <input
+                  type="text"
+                  value={fridayNote}
+                  onChange={(e) => setFridayNote(e.target.value)}
+                  placeholder="e.g. Jumma prayer 12:30 – 1:15"
+                  className="w-full px-3.5 py-2 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded-xl text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-start gap-2 text-xs font-bold text-stone-800 dark:text-stone-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={fridayEnabled}
+                onChange={(e) => setFridayEnabled(e.target.checked)}
+                className="mt-0.5 rounded text-emerald-800 focus:ring-emerald-700"
+              />
+              <span>Print on its own page (unchecked = merge into main sheet)</span>
+            </label>
+
             <button
               type="button"
               onClick={() => {
@@ -1347,26 +1327,47 @@ export const SchoolSetupView: React.FC<SchoolSetupViewProps> = ({ onNavigate }) 
                   ...prev,
                   fridayTimings: {
                     ...prev.fridayTimings,
-                    periodTimes: (prev.periodTimes || []).map(t => ({ start: t.start, end: t.end })),
+                    periodTimes: padTimes(prev.periodTimes, prev.periods.length).map(t => ({ start: t.start, end: t.end })),
                     assemblyTime: { ...prev.assemblyTime }
                   }
                 }));
-                setAutoFilled({});
-                alert('Weekday times copied to Friday. Edit only the periods that differ.');
+                alert('Normal-day times copied. Edit only the periods that differ.');
               }}
-              className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition"
+              className="w-full px-4 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 rounded-xl text-xs font-bold transition"
             >
-              Copy weekday times → Friday
+              Copy normal-day times here
             </button>
-            <button
-              type="button"
-              onClick={handleSaveFridayTimings}
-              className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition"
-            >
-              Save Friday Timings
-            </button>
+
+            <ScheduleEditor
+              key="friday-grid"
+              periodNums={data.periods}
+              times={padTimes(data.fridayTimings?.periodTimes, data.periods.length)}
+              breakAfterValue={fridayBreakAfter}
+              zeroMeans={data.breakAfter || 0}
+              zeroLabel="Same as normal days"
+              breakLabel={fridayBreakLabel.trim() || 'Break'}
+              assembly={data.fridayTimings?.assemblyTime || { start: '', end: '' }}
+              chain={!!data.autoChainTimes}
+              onBreakAfterChange={(n) => {
+                setFridayBreakAfter(n);
+                updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, breakAfter: n } }), true);
+              }}
+              onTimesChange={(t) => updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, periodTimes: t } }), true)}
+              onAssemblyChange={(a) => updateData(prev => ({ ...prev, fridayTimings: { ...prev.fridayTimings, assemblyTime: a } }), true)}
+              onChainChange={toggleAutoChain}
+            />
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveFridayTimings}
+                className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shadow-xs transition"
+              >
+                Save {specialDayName} Timings
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-stone-900 rounded-3xl p-5 sm:p-6 border border-stone-200 dark:border-stone-800 shadow-xs">
