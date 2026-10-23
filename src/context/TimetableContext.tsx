@@ -17,6 +17,7 @@ import {
   newEntryId,
   loadHistory,
   saveHistory,
+  pruneHistory,
   clearSavedHistory
 } from '../utils/changeLog';
 
@@ -43,6 +44,8 @@ interface TimetableContextType {
   ) => void;
   /** Saved list of changes (undo / redo). Survives a page refresh. */
   changeLog: HistoryState;
+  /** Deletes the saved list of changes (the timetable itself is not touched). */
+  clearChangeLog: () => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -321,8 +324,14 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       notifyStorageError(e);
     }
 
-    commitHistory({ undo: [...h.undo, entry].slice(-MAX_HISTORY), redo: [] }, nextStr);
+    commitHistory(pruneHistory({ undo: [...h.undo, entry].slice(-MAX_HISTORY), redo: [] }), nextStr);
   }, [triggerSaveIndicator, notifyStorageError, commitHistory]);
+
+  const clearChangeLog = useCallback(() => {
+    clearSavedHistory();
+    histRef.current = EMPTY_HISTORY;
+    setHist(EMPTY_HISTORY);
+  }, []);
 
   const undo = useCallback(() => {
     const h = histRef.current;
@@ -817,6 +826,7 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         undo,
         redo,
         changeLog: hist,
+        clearChangeLog,
         canUndo: hist.undo.length > 0,
         canRedo: hist.redo.length > 0,
         savedFlash,
