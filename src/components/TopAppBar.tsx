@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Undo2, Redo2, Moon, Sun, HelpCircle, Download, Share, X } from 'lucide-react';
+import { Undo2, Redo2, Moon, Sun, HelpCircle, Download, Share, X, History } from 'lucide-react';
 import { useTimetable } from '../context/TimetableContext';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { useBackClose } from '../hooks/useBackClose';
+import { ChangeHistoryModal } from './ChangeHistoryModal';
 
 interface TopAppBarProps {
   onOpenHelp: () => void;
@@ -10,7 +11,9 @@ interface TopAppBarProps {
 }
 
 export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitle }) => {
-  const { canUndo, canRedo, undo, redo, savedFlash, darkMode, toggleDarkMode } = useTimetable();
+  const { canUndo, canRedo, undo, redo, savedFlash, darkMode, toggleDarkMode, changeLog } = useTimetable();
+  const [showHistory, setShowHistory] = useState(false);
+  const undoCount = changeLog.undo.length;
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showInstallModal, setShowInstallModal] = useState<null | 'ios' | 'other'>(null);
   useBackClose(!!showInstallModal, () => setShowInstallModal(null));
@@ -87,6 +90,21 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
             </button>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setShowHistory(true)}
+            className="relative p-2 text-stone-600 dark:text-stone-300 hover:text-stone-900 dark:hover:text-white rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 active:scale-95 transition"
+            title="Recent changes"
+            aria-label="Recent changes"
+          >
+            <History className="w-4 h-4" />
+            {undoCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-700 text-white text-[9px] font-extrabold flex items-center justify-center">
+                {undoCount > 99 ? '99+' : undoCount}
+              </span>
+            )}
+          </button>
+
           {showInstallButton && (
             <button
               type="button"
@@ -120,6 +138,8 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
           </button>
         </div>
       </div>
+
+      <ChangeHistoryModal isOpen={showHistory} onClose={() => setShowHistory(false)} />
 
       {showInstallModal && (
         <div
