@@ -43,7 +43,9 @@ export interface HistoryState {
 }
 
 export const EMPTY_HISTORY: HistoryState = { undo: [], redo: [] };
-export const MAX_HISTORY = 50;
+/** Most changes kept, and how long they are kept */
+export const MAX_HISTORY = 200;
+export const HISTORY_DAYS = 30;
 const HISTORY_KEY = 'utHistory';
 const MAX_ROWS = 30;
 
@@ -356,6 +358,18 @@ export function newEntryId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+// ---------------------------------------------------------------- expiry
+
+/** Drops changes older than HISTORY_DAYS. */
+export function pruneHistory(h: HistoryState, now: number = Date.now()): HistoryState {
+  const limit = now - HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  const undo = h.undo.filter(e => e.ts >= limit);
+  // redo entries must stay a complete chain: if any expired, forget them all
+  const redo = h.redo.every(e => e.ts >= limit) ? h.redo : [];
+  if (undo.length === h.undo.length && redo.length === h.redo.length) return h;
+  return { undo, redo };
+}
+
 // ---------------------------------------------------------------- storage
 
 /** Loads the saved history, but only if it belongs to exactly the data currently saved. */
@@ -367,7 +381,7 @@ export function loadHistory(savedDataStr: string): HistoryState {
     if (!p || p.head !== hashString(savedDataStr) || !Array.isArray(p.undo) || !Array.isArray(p.redo)) {
       return EMPTY_HISTORY;
     }
-    return { undo: p.undo, redo: p.redo };
+    return pruneHistory({ undo: p.undo, redo: p.redo });
   } catch {
     return EMPTY_HISTORY;
   }
