@@ -1,3 +1,4 @@
+import { useBackClose } from '../hooks/useBackClose';
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useTimetable } from '../context/TimetableContext';
 import { usePersistentState } from '../hooks/usePersistentState';
@@ -223,6 +224,8 @@ export const ViewTimetablesView: React.FC = () => {
     setPopupItem(null);
     setHistory([]);
   }, []);
+  // Phone Back button closes the popup instead of leaving the app
+  useBackClose(!!popupItem, closePopup);
 
   // Navigate to teacher chip from class/period popup
   const navigateToTeacher = (t: string) => {

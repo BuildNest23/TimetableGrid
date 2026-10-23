@@ -6,6 +6,7 @@ import { buildSubstituteDoc, SubstituteDocRow } from '../utils/printDocs';
 import { createTimetableCanvas, shareOrDownloadCanvas } from '../utils/canvasExport';
 import { triggerPrint } from '../utils/printUtils';
 import { dateKey } from '../utils/dates';
+import { useBackClose } from '../hooks/useBackClose';
 import {
   autoFillAssignments,
   candidatesFor,
@@ -1100,7 +1101,10 @@ const Sheet: React.FC<{
   closeLabel?: string;
   onClose: () => void;
   children: React.ReactNode;
-}> = ({ title, subtitle, closeLabel, onClose, children }) => (
+}> = ({ title, subtitle, closeLabel, onClose, children }) => {
+  // Phone Back button closes this sheet (it is only mounted while open)
+  useBackClose(true, onClose);
+  return (
   <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60 backdrop-blur-xs" onClick={onClose}>
     <div
       role="dialog"
@@ -1123,7 +1127,8 @@ const Sheet: React.FC<{
       {children}
     </div>
   </div>
-);
+  );
+};
 
 const SearchBox: React.FC<{ value: string; onChange: (v: string) => void; placeholder: string }> = ({ value, onChange, placeholder }) => (
   <div className="px-4 py-2.5 border-b border-stone-200 dark:border-stone-800">
