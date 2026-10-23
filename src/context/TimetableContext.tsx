@@ -7,6 +7,18 @@ import {
   SubstituteBoard,
   DAY_NAMES
 } from '../types/timetable';
+import {
+  HistoryState,
+  EMPTY_HISTORY,
+  MAX_HISTORY,
+  diffData,
+  applyPatch,
+  describeChange,
+  newEntryId,
+  loadHistory,
+  saveHistory,
+  clearSavedHistory
+} from '../utils/changeLog';
 
 interface ConflictItem {
   days: number[];
@@ -24,7 +36,13 @@ export interface TimetableIssue {
 interface TimetableContextType {
   data: TimetableData;
   setData: React.Dispatch<React.SetStateAction<TimetableData>>;
-  updateData: (updater: (prev: TimetableData) => TimetableData, silent?: boolean) => void;
+  updateData: (
+    updater: (prev: TimetableData) => TimetableData,
+    silent?: boolean,
+    meta?: { tag?: string; where?: string }
+  ) => void;
+  /** Saved list of changes (undo / redo). Survives a page refresh. */
+  changeLog: HistoryState;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -58,7 +76,6 @@ const TimetableContext = createContext<TimetableContextType | null>(null);
 
 const STORAGE_KEY = 'universalTimetable';
 const SCENARIOS_KEY = 'utScenarios';
-const MAX_HISTORY = 30;
 
 function normalize(raw: Partial<TimetableData>): TimetableData {
   const base = { ...EMPTY_TIMETABLE_DATA, ...raw };
@@ -213,8 +230,20 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const dataRef = useRef(data);
   dataRef.current = data;
 
-  const [historyStack, setHistoryStack] = useState<string[]>([]);
-  const [redoStack, setRedoStack] = useState<string[]>([]);
+  // Undo / redo list: saved on the device, so it is still there after a refresh
+  const [hist, setHist] = useState<HistoryState>(() => {
+    try {
+      return loadHistory(localStorage.getItem(STORAGE_KEY) || '');
+    } catch {
+      return EMPTY_HISTORY;
+    }
+  });
+  const histRef = useRef(hist);
+  const commitHistory = useCallback((h: HistoryState, dataStr: string) => {
+    const kept = saveHistory(h, dataStr);
+    histRef.current = kept;
+    setHist(kept);
+  }, []);
   const [savedFlash, setSavedFlash] = useState(false);
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
 
@@ -258,65 +287,76 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return () => clearTimeout(timer);
   }, []);
 
-  // Pure updater: computes next outside the updater, updates storage and history outside
-  const updateData = useCallback((updater: (prev: TimetableData) => TimetableData, silent = false) => {
+  // Pure updater: computes next outside the updater, saves the data and records the change
+  const updateData = useCallback((
+    updater: (prev: TimetableData) => TimetableData,
+    silent = false,
+    meta?: { tag?: string; where?: string }
+  ) => {
     const prev = dataRef.current;
     const nextRaw = updater(prev);
     const next = normalize(nextRaw);
-    const prevStr = JSON.stringify(prev);
+    const patch = diffData(prev, next);
+    if (!patch) return; // nothing really changed
+
     const nextStr = JSON.stringify(next);
+    dataRef.current = next;
+    setData(next);
 
-    if (prevStr !== nextStr) {
-      setData(next);
+    const entry = {
+      id: newEntryId(),
+      ts: Date.now(),
+      ...describeChange(prev, next, patch, meta),
+      patch
+    };
+    const h = histRef.current;
 
-      setHistoryStack(hs => {
-        const newStack = [...hs, prevStr];
-        if (newStack.length > MAX_HISTORY) newStack.shift();
-        return newStack;
-      });
-      setRedoStack([]);
-
-      try {
-        localStorage.setItem(STORAGE_KEY, nextStr);
-        if (!silent) {
-          localStorage.setItem('utLastSaved', String(Date.now()));
-          triggerSaveIndicator();
-        }
-      } catch (e) {
-        notifyStorageError(e);
+    try {
+      localStorage.setItem(STORAGE_KEY, nextStr);
+      if (!silent) {
+        localStorage.setItem('utLastSaved', String(Date.now()));
+        triggerSaveIndicator();
       }
+    } catch (e) {
+      notifyStorageError(e);
     }
-  }, [triggerSaveIndicator, notifyStorageError]);
+
+    commitHistory({ undo: [...h.undo, entry].slice(-MAX_HISTORY), redo: [] }, nextStr);
+  }, [triggerSaveIndicator, notifyStorageError, commitHistory]);
 
   const undo = useCallback(() => {
-    if (!historyStack.length) return;
-    const prevStr = historyStack[historyStack.length - 1];
-    setHistoryStack(hs => hs.slice(0, -1));
-    setRedoStack(rs => [...rs, JSON.stringify(dataRef.current)]);
+    const h = histRef.current;
+    if (!h.undo.length) return;
+    const entry = h.undo[h.undo.length - 1];
     try {
-      const restored = normalize(JSON.parse(prevStr));
+      const restored = normalize(applyPatch(dataRef.current, entry.patch, 'b'));
+      const str = JSON.stringify(restored);
+      dataRef.current = restored;
       setData(restored);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      localStorage.setItem(STORAGE_KEY, str);
       triggerSaveIndicator();
+      commitHistory({ undo: h.undo.slice(0, -1), redo: [...h.redo, entry].slice(-MAX_HISTORY) }, str);
     } catch (e) {
       notifyStorageError(e);
     }
-  }, [historyStack, triggerSaveIndicator, notifyStorageError]);
+  }, [triggerSaveIndicator, notifyStorageError, commitHistory]);
 
   const redo = useCallback(() => {
-    if (!redoStack.length) return;
-    const nextStr = redoStack[redoStack.length - 1];
-    setRedoStack(rs => rs.slice(0, -1));
-    setHistoryStack(hs => [...hs, JSON.stringify(dataRef.current)]);
+    const h = histRef.current;
+    if (!h.redo.length) return;
+    const entry = h.redo[h.redo.length - 1];
     try {
-      const restored = normalize(JSON.parse(nextStr));
+      const restored = normalize(applyPatch(dataRef.current, entry.patch, 'a'));
+      const str = JSON.stringify(restored);
+      dataRef.current = restored;
       setData(restored);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+      localStorage.setItem(STORAGE_KEY, str);
       triggerSaveIndicator();
+      commitHistory({ undo: [...h.undo, entry].slice(-MAX_HISTORY), redo: h.redo.slice(0, -1) }, str);
     } catch (e) {
       notifyStorageError(e);
     }
-  }, [redoStack, triggerSaveIndicator, notifyStorageError]);
+  }, [triggerSaveIndicator, notifyStorageError, commitHistory]);
 
   // Shared workload map: guaranteed weekly sum equals sum of daily counts
   const teacherWorkloadMap = useMemo(() => {
@@ -658,7 +698,7 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (!raw) return false;
       const scenarios = JSON.parse(raw);
       if (!scenarios || !scenarios[name]) return false;
-      updateData(() => normalize(scenarios[name]));
+      updateData(() => normalize(scenarios[name]), false, { tag: 'SCENARIO', where: `Loaded scenario “${name}”` });
       return true;
     } catch (e) {
       console.error("Failed to load scenario:", e);
@@ -700,16 +740,19 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       'utEditorPeriodIdx',
       'utEditorMode',
       'utCurrentTab',
-      'printStudioSecondHeaders'
+      'printStudioSecondHeaders',
+      'utHistory'
     ];
     try {
       keysToClear.forEach(k => localStorage.removeItem(k));
     } catch (e) {
       console.warn("Storage clear error:", e);
     }
+    dataRef.current = EMPTY_TIMETABLE_DATA;
     setData(EMPTY_TIMETABLE_DATA);
-    setHistoryStack([]);
-    setRedoStack([]);
+    clearSavedHistory();
+    histRef.current = EMPTY_HISTORY;
+    setHist(EMPTY_HISTORY);
   }, []);
 
   const exportBackupJson = useCallback((): string => {
@@ -758,7 +801,7 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return false;
       }
 
-      updateData(() => incomingData);
+      updateData(() => incomingData, false, { tag: 'IMPORT', where: 'Restored from backup file' });
       return true;
     } catch {
       return false;
@@ -773,8 +816,9 @@ export const TimetableProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateData,
         undo,
         redo,
-        canUndo: historyStack.length > 0,
-        canRedo: redoStack.length > 0,
+        changeLog: hist,
+        canUndo: hist.undo.length > 0,
+        canRedo: hist.redo.length > 0,
         savedFlash,
         darkMode,
         toggleDarkMode,
