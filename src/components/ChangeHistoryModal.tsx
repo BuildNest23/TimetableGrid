@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Undo2, Redo2, History } from 'lucide-react';
 import { useTimetable } from '../context/TimetableContext';
 import { useBackClose } from '../hooks/useBackClose';
-import { HistoryEntry } from '../utils/changeLog';
+import { HistoryEntry, HISTORY_DAYS } from '../utils/changeLog';
 
 interface ChangeHistoryModalProps {
   isOpen: boolean;
@@ -29,14 +30,16 @@ interface Item {
 }
 
 export const ChangeHistoryModal: React.FC<ChangeHistoryModalProps> = ({ isOpen, onClose }) => {
-  const { changeLog, undo, redo } = useTimetable();
+  const { changeLog, undo, redo, clearChangeLog } = useTimetable();
   const [visible, setVisible] = useState(PAGE);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useBackClose(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {
       setVisible(PAGE);
+      setConfirmClear(false);
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -70,7 +73,8 @@ export const ChangeHistoryModal: React.FC<ChangeHistoryModalProps> = ({ isOpen, 
   const canRedo = changeLog.redo.length > 0;
   const shown = items.slice(0, visible);
 
-  return (
+  // Drawn on <body>, not inside the blurred top bar (a blurred parent would trap a fixed popup)
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={onClose}
@@ -89,7 +93,7 @@ export const ChangeHistoryModal: React.FC<ChangeHistoryModalProps> = ({ isOpen, 
           <div>
             <h3 className="text-base font-extrabold text-stone-900 dark:text-stone-100">Recent changes</h3>
             <p className="text-xs text-stone-600 dark:text-stone-400 mt-0.5">
-              Saved on this device. Stays after refresh.
+              Saved on this device for {HISTORY_DAYS} days. Stays after refresh.
             </p>
           </div>
           <button
@@ -196,6 +200,42 @@ export const ChangeHistoryModal: React.FC<ChangeHistoryModalProps> = ({ isOpen, 
           )}
         </div>
 
+        {items.length > 0 && (
+          <div className="px-3.5 pt-2 bg-white dark:bg-stone-900 border-t border-stone-200 dark:border-stone-800">
+            {!confirmClear ? (
+              <button
+                type="button"
+                onClick={() => setConfirmClear(true)}
+                className="w-full min-h-[40px] text-xs font-bold text-rose-700 dark:text-rose-400"
+              >
+                Clear history
+              </button>
+            ) : (
+              <div className="rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-3 space-y-2">
+                <p className="text-xs text-rose-900 dark:text-rose-200 leading-relaxed">
+                  Delete all {items.length} saved changes? Your timetable stays as it is, but you will not be able to undo them.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClear(false)}
+                    className="flex-1 min-h-[40px] rounded-lg bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 text-xs font-extrabold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { clearChangeLog(); setConfirmClear(false); }}
+                    className="flex-1 min-h-[40px] rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-extrabold"
+                  >
+                    Delete history
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2.5 px-3.5 pt-3 pb-4 border-t border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900">
           <button
             type="button"
@@ -215,6 +255,7 @@ export const ChangeHistoryModal: React.FC<ChangeHistoryModalProps> = ({ isOpen, 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
