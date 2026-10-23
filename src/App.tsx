@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TimetableProvider, useTimetable } from './context/TimetableContext';
 import { ActiveTab } from './types/timetable';
 import { useScrollRestore } from './hooks/usePersistentState';
+import { initBackNav, pushTabEntry } from './utils/backStack';
 import { TopAppBar } from './components/TopAppBar';
 import { BottomNavBar } from './components/BottomNavBar';
 import { HelpModal } from './components/HelpModal';
@@ -45,7 +46,19 @@ const AppContent: React.FC = () => {
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
   const { undo, redo } = useTimetable();
 
+  // Phone Back button: closes popups first, then goes to the previous screen.
+  useEffect(() => {
+    return initBackNav(activeTab, (tab) => {
+      if (!(tab in TAB_TITLES)) return;
+      setActiveTab(tab as ActiveTab);
+      try { localStorage.setItem('utCurrentTab', tab); } catch { /* ignore */ }
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSelectTab = (tab: ActiveTab, jumpContext?: { period?: number; teacher?: string }) => {
+    if (tab !== activeTab) pushTabEntry(tab);
     setActiveTab(tab);
     try { localStorage.setItem('utCurrentTab', tab); } catch { /* ignore */ }
     if (jumpContext) {
