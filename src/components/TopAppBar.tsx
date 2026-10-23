@@ -39,12 +39,12 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
   return (
     <header className="sticky top-0 z-30 bg-white/90 dark:bg-stone-900/90 backdrop-blur-md border-b border-stone-200 dark:border-stone-800 transition-colors">
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0 shrink">
           <div className="w-8 h-8 rounded-xl bg-emerald-800 dark:bg-emerald-700 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-xs">
             TG
           </div>
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100 truncate flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-bold tracking-tight text-stone-900 dark:text-stone-100 whitespace-nowrap flex items-center gap-2">
               TimetableGrid
               <span className="hidden md:inline-block text-xs font-medium text-stone-400">·</span>
               <span className="hidden md:inline-block text-xs font-semibold text-emerald-800 dark:text-emerald-400">
@@ -54,20 +54,24 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <div
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-300 ${
+            role="status"
+            aria-label="Saved"
+            className={`flex items-center gap-1 px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-full text-xs font-bold transition-all duration-300 ${
               savedFlash
                 ? 'bg-emerald-600 text-white scale-105 shadow-xs'
                 : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
             }`}
             title="All changes are automatically saved offline on your device"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" />
-            <span className="text-[11px]">Saved</span>
+            <span className={`w-2 h-2 sm:w-1.5 sm:h-1.5 rounded-full ${savedFlash ? 'bg-white' : 'bg-emerald-600 dark:bg-emerald-400'}`} />
+            {/* On phones only the green dot is shown, to leave room for the app name */}
+            <span className="hidden sm:inline text-[11px]">Saved</span>
           </div>
 
-          <div className="flex items-center bg-stone-100 dark:bg-stone-800 rounded-xl p-0.5">
+          {/* Undo/Redo buttons are hidden on phones (they are in the Recent changes window) */}
+          <div className="hidden sm:flex items-center bg-stone-100 dark:bg-stone-800 rounded-xl p-0.5">
             <button
               type="button"
               onClick={undo}
