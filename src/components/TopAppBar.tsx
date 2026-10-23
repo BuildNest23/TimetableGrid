@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Undo2, Redo2, Moon, Sun, HelpCircle, Download, Share, X } from 'lucide-react';
 import { useTimetable } from '../context/TimetableContext';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import { useBackClose } from '../hooks/useBackClose';
 
 interface TopAppBarProps {
   onOpenHelp: () => void;
@@ -12,6 +13,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({ onOpenHelp, activeViewTitl
   const { canUndo, canRedo, undo, redo, savedFlash, darkMode, toggleDarkMode } = useTimetable();
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showInstallModal, setShowInstallModal] = useState<null | 'ios' | 'other'>(null);
+  useBackClose(!!showInstallModal, () => setShowInstallModal(null));
 
   const handleInstallClick = async () => {
     if (isIOS) {

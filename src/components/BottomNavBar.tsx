@@ -11,6 +11,7 @@ import {
   X
 } from 'lucide-react';
 import { ActiveTab } from '../types/timetable';
+import { useBackClose } from '../hooks/useBackClose';
 
 interface BottomNavBarProps {
   currentTab: ActiveTab;
@@ -19,6 +20,7 @@ interface BottomNavBarProps {
 
 export const BottomNavBar: React.FC<BottomNavBarProps> = ({ currentTab, onSelectTab }) => {
   const [showMoreSheet, setShowMoreSheet] = useState(false);
+  useBackClose(showMoreSheet, () => setShowMoreSheet(false));
 
   const mainTabs = [
     { id: 'dashboard' as ActiveTab, label: 'Home', icon: LayoutDashboard },

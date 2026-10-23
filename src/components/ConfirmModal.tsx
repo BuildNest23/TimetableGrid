@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, HelpCircle, CheckCircle, Info } from 'lucide-react';
+import { useBackClose } from '../hooks/useBackClose';
 
 export interface ConfirmDialogOptions {
   title?: string;
@@ -27,6 +28,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 }) => {
   const [inputValue, setInputValue] = useState(options.defaultValue || "");
   const inputRef = useRef<HTMLInputElement>(null);
+  useBackClose(isOpen, onCancel);
 
   useEffect(() => {
     if (isOpen) {

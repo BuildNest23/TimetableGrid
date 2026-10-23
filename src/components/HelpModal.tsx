@@ -1,4 +1,5 @@
 import React from 'react';
+import { useBackClose } from '../hooks/useBackClose';
 import { X, BookOpen, Layers, CheckCircle2, FileSpreadsheet, Printer, Smartphone } from 'lucide-react';
 
 interface HelpModalProps {
@@ -7,6 +8,7 @@ interface HelpModalProps {
 }
 
 export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
+  useBackClose(isOpen, onClose);
   if (!isOpen) return null;
 
   return (

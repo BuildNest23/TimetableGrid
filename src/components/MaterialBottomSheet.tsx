@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, X, Check } from 'lucide-react';
+import { useBackClose } from '../hooks/useBackClose';
 
 interface MaterialBottomSheetProps {
   isOpen: boolean;
@@ -35,6 +36,8 @@ export const MaterialBottomSheet: React.FC<MaterialBottomSheetProps> = ({
       document.body.style.overflow = "";
     };
   }, [isOpen]);
+
+  useBackClose(isOpen, onClose);
 
   if (!isOpen) return null;
 
