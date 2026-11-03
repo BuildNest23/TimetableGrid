@@ -7,6 +7,7 @@ import { TopAppBar } from './components/TopAppBar';
 import { BottomNavBar } from './components/BottomNavBar';
 import { HelpModal } from './components/HelpModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useWidgetSync } from './utils/widgetSync';
 
 import { DashboardView } from './views/DashboardView';
 import { TimetableEditorView } from './views/TimetableEditorView';
@@ -44,7 +45,8 @@ const AppContent: React.FC = () => {
   // Set only when jumping in from the Dashboard; the Substitute board saves its own absent list per date.
   const [substituteTeacher, setSubstituteTeacher] = useState<string | undefined>(undefined);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
-  const { undo, redo } = useTimetable();
+  const { undo, redo, data, getLeavesForDate } = useTimetable();
+  useWidgetSync(data, getLeavesForDate);
 
   // Phone Back button: closes popups first, then goes to the previous screen.
   useEffect(() => {
