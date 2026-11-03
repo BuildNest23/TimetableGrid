@@ -1,8 +1,8 @@
 name: Build Android APK
 
-# Runs only when you tap "Run workflow" in the Actions tab,
-# so normal edits don't trigger it. Your website deploy is separate.
 on:
+  push:
+    branches: ['Android']
   workflow_dispatch:
 
 jobs:
