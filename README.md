@@ -62,3 +62,15 @@ npm install
 npm run dev        # http://localhost:3000
 npm run build      # production build → dist/
 npm run preview    # preview the build
+
+## Android app + home-screen widget
+
+The app is wrapped with Capacitor, and an Android widget shows the running period and what every class is doing.
+
+**Build the APK (no Android Studio needed):** push to GitHub → *Actions* → **Build Android APK** → *Run workflow* → download `timetablegrid-debug-apk` and install it.
+
+**Add the widget:** long-press the home screen → *Widgets* → **TimetableGrid** → drag it out. Open the app once so it can send your timetable to the widget; after that the widget updates itself every minute, even when the app is closed. It refreshes again whenever you edit the timetable.
+
+Locally: `npm install && npm run build && npx cap add android && npm run sync:android`, then open `android/` in Android Studio.
+
+How it works: `src/utils/widgetSync.ts` sends a week snapshot to the native plugin; `android-res/java/WidgetLogic.java` mirrors `getLiveScheduleStatus()` from `src/utils/liveSchedule.ts`. If you change the live-status rules there, mirror them in that Java file.
