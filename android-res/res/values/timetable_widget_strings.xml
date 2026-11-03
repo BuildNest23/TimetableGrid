@@ -1,1 +1,5 @@
-
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_description">Shows the running period and what every class is doing right now.</string>
+    <string name="widget_empty">No classes to show</string>
+</resources>
