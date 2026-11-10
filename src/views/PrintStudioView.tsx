@@ -57,7 +57,9 @@ export const PrintStudioView: React.FC = () => {
   // The card has its own Time-column toggle (on by default, like the View tab); the grid keeps "period times in header".
   const [cardShowTimes, setCardShowTimes] = useState<boolean>(true);
   const isCardLayout = (type === 'class' || type === 'allclasses') && classLayout === 'card';
+  const [cardShowBreak, setCardShowBreak] = useState<boolean>(true);
   const effShowTimes = isCardLayout ? cardShowTimes : showTimes;
+  const effShowBreak = isCardLayout ? cardShowBreak : showBreakCol;
 
   // Saved second header, kept separately for Whole School and All Teachers
   const SUBTITLE_KEY = 'printStudioSecondHeaders';
@@ -193,6 +195,10 @@ export const PrintStudioView: React.FC = () => {
 
   const handleToggleBreak = () => {
     resetSafetyState();
+    if (isCardLayout) {
+      setCardShowBreak(v => !v);
+      return;
+    }
     const next = !showBreakCol;
     setShowBreakCol(next);
     persistChanges({ printBreakCol: next });
@@ -230,7 +236,7 @@ export const PrintStudioView: React.FC = () => {
     fontPt,
     orientation,
     showTimes: effShowTimes,
-    showBreakCol,
+    showBreakCol: effShowBreak,
     oneSectionPerPage,
     stripsGrid,
     classLayout,
@@ -244,7 +250,7 @@ export const PrintStudioView: React.FC = () => {
     fontPt,
     orientation,
     effShowTimes,
-    showBreakCol,
+    effShowBreak,
     oneSectionPerPage,
     stripsGrid,
     classLayout,
@@ -284,7 +290,7 @@ export const PrintStudioView: React.FC = () => {
       selectedTeacher,
       orientation,
       showTimes: effShowTimes,
-      showBreakCol,
+      showBreakCol: effShowBreak,
       oneSectionPerPage,
       stripsGrid,
       classLayout,
@@ -709,7 +715,7 @@ export const PrintStudioView: React.FC = () => {
                   onClick={handleToggleBreak}
                   className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
                 >
-                  {showBreakCol ? (
+                  {effShowBreak ? (
                     <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
                   ) : (
                     <Square className="w-4 h-4 text-stone-400 shrink-0" />
