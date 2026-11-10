@@ -26,6 +26,8 @@ export interface PageLayoutOptions {
   showBreakCol: boolean;
   oneSectionPerPage?: boolean;
   stripsGrid?: string;
+  /** Class Wise / All Classes only: 'grid' = Day × Period table, 'card' = Period | Time | Assignment card (same as View tab). */
+  classLayout?: 'grid' | 'card';
   teacherPeriodSummary: (t: string, pi: number) => string;
   getTeacherTotalPeriods?: (t: string) => number;
   safetyReductionPx?: number;
@@ -967,13 +969,14 @@ export function getFreeTeachersForPeriod(
 export function buildClassCardHTML(
   data: TimetableData,
   className: string,
-  opts: { fontPt?: number; timingMode?: TimingMode } = {}
+  opts: { fontPt?: number; timingMode?: TimingMode; showTimes?: boolean; showBreak?: boolean } = {}
 ): string {
   const fontPt = opts.fontPt || 10.5;
   const targetClass = data.classes.find(c => c[0] === className) || data.classes[0] || [className, '', '', [], [], []];
 
   const timings = getPeriodTimes(data);
-  const hasTimes = timings.periods.some(p => p.normal || p.friday);
+  // showTimes / showBreak default to true so the View tab card is unchanged; Print Studio can switch them off.
+  const hasTimes = opts.showTimes !== false && timings.periods.some(p => p.normal || p.friday);
 
   const rowBorder = `border:0.75pt solid #000;`;
   const thBorder = `border-top:1.5pt solid #000; border-bottom:1pt solid #000; border-left:0.75pt solid #000; border-right:0.75pt solid #000; color:#000; font-weight:700;`;
@@ -1003,7 +1006,7 @@ export function buildClassCardHTML(
   `;
 
   // Total rows for height calculation: periods + break row (if break configured)
-  const hasBreak = timings.normalBreak.breakAfter > 0 && timings.normalBreak.breakAfter < data.periods.length;
+  const hasBreak = opts.showBreak !== false && timings.normalBreak.breakAfter > 0 && timings.normalBreak.breakAfter < data.periods.length;
   const totalRows = data.periods.length + (hasBreak ? 1 : 0);
 
   // Table header
@@ -1501,6 +1504,44 @@ export function computePrintStudioPages(
       heightPx: A4_PORTRAIT.height,
       totalExpectedRows: data.periods.length,
       totalRowsShown: data.periods.length,
+      allRowsFit: true
+    };
+  }
+
+  // Class Wise / All Classes in "Card" layout: same single-page card as the View tab class popup,
+  // one page per class. Font size, times and break row stay adjustable from Print Studio.
+  if ((type === 'class' || type === 'allclasses') && opts.classLayout === 'card') {
+    const classNames = type === 'class'
+      ? [opts.selectedClass || data.classes[0]?.[0] || '']
+      : (data.classes.length ? data.classes.map(c => c[0]) : ['']);
+    const rowsPerPage = data.periods.length;
+
+    const cardPages: ComputedPage[] = classNames.map((name, idx) => ({
+      pageNumber: idx + 1,
+      totalPages: classNames.length,
+      isFirstPage: true,
+      headerHtml: '',
+      tableHeaderHtml: '',
+      rowsHtml: '',
+      footerHtml: '',
+      rowCount: rowsPerPage,
+      customBodyHtml: buildClassCardHTML(data, name, {
+        fontPt,
+        showTimes: opts.showTimes,
+        showBreak: opts.showBreakCol
+      })
+    }));
+
+    return {
+      pages: cardPages,
+      pageCount: cardPages.length,
+      lastPageFullness: 100,
+      fontPt,
+      orientation,
+      widthPx: pageWidth,
+      heightPx: pageHeight,
+      totalExpectedRows: rowsPerPage * cardPages.length,
+      totalRowsShown: rowsPerPage * cardPages.length,
       allRowsFit: true
     };
   }

@@ -48,6 +48,17 @@ export const PrintStudioView: React.FC = () => {
   const [showTimes, setShowTimes] = useState<boolean>(() => data.printTimes ?? false);
   const [showBreakCol, setShowBreakCol] = useState<boolean>(() => data.printBreakCol ?? true);
   const [oneSectionPerPage, setOneSectionPerPage] = useState<boolean>(false);
+
+  // Class Wise / All Classes layout: 'grid' (Day × Period table) or 'card' (Period | Time | Assignment, as in View tab)
+  const CLASS_LAYOUT_KEY = 'printStudioClassLayout';
+  const [classLayout, setClassLayout] = useState<'grid' | 'card'>(() => {
+    try { return localStorage.getItem(CLASS_LAYOUT_KEY) === 'card' ? 'card' : 'grid'; } catch { return 'grid'; }
+  });
+  // The card has its own Time-column toggle (on by default, like the View tab); the grid keeps "period times in header".
+  const [cardShowTimes, setCardShowTimes] = useState<boolean>(true);
+  const isCardLayout = (type === 'class' || type === 'allclasses') && classLayout === 'card';
+  const effShowTimes = isCardLayout ? cardShowTimes : showTimes;
+
   // Saved second header, kept separately for Whole School and All Teachers
   const SUBTITLE_KEY = 'printStudioSecondHeaders';
   const [customSubtitles, setCustomSubtitles] = useState<Record<string, string>>(() => {
@@ -136,6 +147,9 @@ export const PrintStudioView: React.FC = () => {
     if (t === 'teacher' || t === 'schooltimings') {
       setOrientation('portrait');
       persistChanges({ printOrientation: 'portrait' });
+    } else if ((t === 'class' || t === 'allclasses') && classLayout === 'card') {
+      setOrientation('portrait');
+      persistChanges({ printOrientation: 'portrait' });
     } else if (t === 'teacherstrips') {
       setStripsGrid(orientation === 'portrait' ? '2x4' : '4x2');
     }
@@ -156,8 +170,22 @@ export const PrintStudioView: React.FC = () => {
     setSelectedTeacher(t);
   };
 
+  const handleClassLayoutChange = (l: 'grid' | 'card') => {
+    resetSafetyState();
+    setClassLayout(l);
+    try { localStorage.setItem(CLASS_LAYOUT_KEY, l); } catch { /* ignore */ }
+    // Card is a portrait page; grid is wide. Switch the orientation to match (still adjustable afterwards).
+    const o = l === 'card' ? 'portrait' : 'landscape';
+    setOrientation(o);
+    persistChanges({ printOrientation: o });
+  };
+
   const handleToggleTimes = () => {
     resetSafetyState();
+    if (isCardLayout) {
+      setCardShowTimes(v => !v);
+      return;
+    }
     const next = !showTimes;
     setShowTimes(next);
     persistChanges({ printTimes: next });
@@ -201,10 +229,11 @@ export const PrintStudioView: React.FC = () => {
     selectedTeacher,
     fontPt,
     orientation,
-    showTimes,
+    showTimes: effShowTimes,
     showBreakCol,
     oneSectionPerPage,
     stripsGrid,
+    classLayout,
     teacherPeriodSummary,
     getTeacherTotalPeriods,
     safetyReductionPx
@@ -214,10 +243,11 @@ export const PrintStudioView: React.FC = () => {
     selectedTeacher,
     fontPt,
     orientation,
-    showTimes,
+    effShowTimes,
     showBreakCol,
     oneSectionPerPage,
     stripsGrid,
+    classLayout,
     teacherPeriodSummary,
     getTeacherTotalPeriods,
     safetyReductionPx
@@ -253,10 +283,11 @@ export const PrintStudioView: React.FC = () => {
       selectedClass,
       selectedTeacher,
       orientation,
-      showTimes,
+      showTimes: effShowTimes,
       showBreakCol,
       oneSectionPerPage,
       stripsGrid,
+      classLayout,
       teacherPeriodSummary,
       getTeacherTotalPeriods
     }, targetPages);
@@ -465,6 +496,35 @@ export const PrintStudioView: React.FC = () => {
               </div>
             </div>
 
+            {/* Layout choice for Class Wise / All Classes */}
+            {(type === 'class' || type === 'allclasses') && (
+              <div className="mt-2.5">
+                <label className="block text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">
+                  Class Layout
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                  {[
+                    { id: 'grid' as const, label: 'Grid', hint: 'Days × Periods' },
+                    { id: 'card' as const, label: 'Card', hint: 'Period list' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleClassLayoutChange(opt.id)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold transition text-center leading-tight ${
+                        classLayout === opt.id
+                          ? 'bg-white dark:bg-stone-900 text-emerald-800 dark:text-emerald-300 shadow-xs'
+                          : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                      }`}
+                    >
+                      <div>{opt.label}</div>
+                      <div className="text-[9px] font-medium opacity-70">{opt.hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Target Selectors if class or teacher wise */}
             {type === 'class' && (
               <div className="mt-2.5">
@@ -570,7 +630,7 @@ export const PrintStudioView: React.FC = () => {
             </div>
 
             {/* Auto-Fit Buttons (for standard row-packed timetables) */}
-            {type !== 'teacherstrips' && (
+            {type !== 'teacherstrips' && !isCardLayout && (
               <div className="grid grid-cols-2 gap-2 mt-3">
                 <button
                   type="button"
@@ -635,12 +695,12 @@ export const PrintStudioView: React.FC = () => {
                 onClick={handleToggleTimes}
                 className="w-full flex items-center gap-2.5 text-left text-xs font-bold text-stone-700 dark:text-stone-300 py-1"
               >
-                {showTimes ? (
+                {effShowTimes ? (
                   <CheckSquare className="w-4 h-4 text-emerald-700 shrink-0" />
                 ) : (
                   <Square className="w-4 h-4 text-stone-400 shrink-0" />
                 )}
-                <span>Show period times in header</span>
+                <span>{isCardLayout ? 'Show Time column' : 'Show period times in header'}</span>
               </button>
 
               {type !== 'teacher' && (
@@ -654,7 +714,7 @@ export const PrintStudioView: React.FC = () => {
                   ) : (
                     <Square className="w-4 h-4 text-stone-400 shrink-0" />
                   )}
-                  <span>Show hatched break column</span>
+                  <span>{isCardLayout ? 'Show hatched break row' : 'Show hatched break column'}</span>
                 </button>
               )}
 
