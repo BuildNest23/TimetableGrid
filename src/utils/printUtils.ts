@@ -15,6 +15,8 @@ export function triggerPrint(
     orientation?: 'landscape' | 'portrait';
     margin?: string;
     pageSize?: string;
+    /** Descriptive name for the saved PDF / print job (browsers and the Android print job use the page title as the file name). */
+    title?: string;
   } = {}
 ) {
   const printArea = document.getElementById('printArea');
@@ -53,7 +55,13 @@ export function triggerPrint(
   printArea.innerHTML = htmlContent;
   printArea.style.display = 'block';
 
+  // Name the saved file after what is being printed, then restore the app title afterwards.
+  const originalTitle = document.title;
+  const cleanTitle = (options.title || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+  if (cleanTitle) document.title = cleanTitle;
+
   const cleanup = () => {
+    if (cleanTitle) document.title = originalTitle;
     printArea.innerHTML = '';
     printArea.style.display = 'none';
     window.removeEventListener('afterprint', cleanup);

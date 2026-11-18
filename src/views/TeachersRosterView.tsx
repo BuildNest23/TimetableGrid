@@ -16,7 +16,7 @@ export const TeachersRosterView: React.FC = () => {
 
   const handlePrint = () => {
     const content = buildRosterDoc(data, getTeacherTotalPeriods, 'print');
-    triggerPrint(content, { orientation: 'portrait', printSize: 'm' });
+    triggerPrint(content, { orientation: 'portrait', printSize: 'm', title: `Teachers Roster - ${new Date().toISOString().slice(0, 10)}` });
   };
 
   const handleExportImage = async (_share = false) => {

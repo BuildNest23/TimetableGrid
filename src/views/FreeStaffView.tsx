@@ -94,7 +94,7 @@ export const FreeStaffView: React.FC = () => {
     );
 
   const handlePrint = () => {
-    triggerPrint(buildFreeHtml('print'), { orientation: 'portrait', printSize: 'm' });
+    triggerPrint(buildFreeHtml('print'), { orientation: 'portrait', printSize: 'm', title: `Free Staff by Period - ${new Date().toISOString().slice(0, 10)}` });
   };
 
   const handleExportImage = async (_share = false) => {

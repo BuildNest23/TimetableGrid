@@ -307,7 +307,7 @@ export const SubstituteView: React.FC<SubstituteViewProps> = ({
       alert('Add an absent teacher first.');
       return;
     }
-    triggerPrint(buildSheetHtml('print'), { orientation: 'portrait', printSize: 'm' });
+    triggerPrint(buildSheetHtml('print'), { orientation: 'portrait', printSize: 'm', title: `Substitute Sheet - ${absent.join(', ')} - ${leaveDate}` });
   };
 
   const handleExportImage = async () => {

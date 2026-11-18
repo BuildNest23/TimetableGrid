@@ -315,10 +315,26 @@ export const PrintStudioView: React.FC = () => {
     return () => window.removeEventListener('resize', updateScale);
   }, [orientation]);
 
+  // File name used when saving as PDF: describes what is being printed
+  const printFileTitle = useMemo(() => {
+    const school = (data.schoolName || '').trim();
+    let what: string;
+    switch (type) {
+      case 'class': what = `Class ${selectedClass || data.classes[0]?.[0] || ''} Timetable`; break;
+      case 'teacher': what = `Teacher ${selectedTeacher || ''} Timetable`; break;
+      case 'allclasses': what = 'All Classes Timetable'; break;
+      case 'allteachers': what = 'All Teachers Timetable'; break;
+      case 'teacherstrips': what = 'Teacher Strips'; break;
+      case 'whole': what = 'Whole School Timetable'; break;
+      default: what = 'Timetable';
+    }
+    return `${what.replace(/\s+/g, ' ').trim()}${school ? ' - ' + school : ''}`;
+  }, [type, selectedClass, selectedTeacher, data.schoolName, data.classes]);
+
   // Print mechanism using shared triggerPrint
   const handlePrint = () => {
     const printableHtml = buildPrintableHtml(data, layoutResult, layoutOpts);
-    triggerPrint(printableHtml, { orientation, margin: '8mm' });
+    triggerPrint(printableHtml, { orientation, margin: '8mm', title: printFileTitle });
   };
 
   // Status readability badge color and text
